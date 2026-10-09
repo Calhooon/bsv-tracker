@@ -271,7 +271,8 @@ impl State {
         let answer = headers.header_at(height);
         match answer {
             Ok(Some(header)) if header.merkle_root == mined.checked().root() => {
-                self.suspect = false
+                self.suspect = false;
+                self.reask = None;
             }
             Ok(Some(_)) => self.stale(height),
             Ok(None) => {

@@ -148,7 +148,7 @@ fn fork_tip_recheck_and_invalidation_retain_the_evidence_record() {
     );
     mined(&s, 10);
     assert!(!s.suspect());
-    assert_eq!(s.reask(), Some(&Reask::Recheck));
+    assert_eq!(s.reask(), None);
     step(
         &mut s,
         &h,
@@ -167,6 +167,46 @@ fn fork_tip_recheck_and_invalidation_retain_the_evidence_record() {
     assert_eq!(s.word(), &Word::Stale);
     assert_eq!(s.evidence(), saved.as_ref());
     assert_eq!(s.reask(), Some(&Reask::Reorg { fork_height: 10 }));
+}
+
+#[test]
+fn successful_recheck_clears_completed_spend_and_fork_triggers() {
+    let txid = hash(1);
+    let p = proof(&txid, 10, 2);
+    let mut h = TestHeaders::default();
+    h.insert(&p, 10);
+    let mut s = State::new(&txid);
+    step(&mut s, &h, Input::Evidence(Evidence::Proof(p)));
+    let evidence = s.evidence().cloned();
+    step(&mut s, &h, Input::Host(HostAction::SpendAttempt));
+    assert_eq!(s.reask(), Some(&Reask::Spend));
+    step(&mut s, &h, Input::Evidence(Evidence::Recheck));
+    mined(&s, 10);
+    assert_eq!(s.reask(), None);
+    assert_eq!(s.evidence(), evidence.as_ref());
+    step(
+        &mut s,
+        &h,
+        Input::Evidence(Evidence::Chain(ChainEvent::Fork {
+            height: 10,
+            competing_tips: vec![hash(2), hash(3)],
+            depth: 1,
+        })),
+    );
+    assert!(s.suspect());
+    assert_eq!(s.reask(), Some(&Reask::Fork { height: 10 }));
+    step(
+        &mut s,
+        &h,
+        Input::Evidence(Evidence::Chain(ChainEvent::Tip {
+            height: 11,
+            hash: hash(11),
+        })),
+    );
+    mined(&s, 10);
+    assert!(!s.suspect());
+    assert_eq!(s.reask(), None);
+    assert_eq!(s.evidence(), evidence.as_ref());
 }
 
 #[test]

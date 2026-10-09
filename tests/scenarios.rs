@@ -1,4 +1,4 @@
-//! Local tracker projections of the seven corpus witnesses at stack pin 24f22f8.
+//! Local tracker projections of the seven corpus witnesses at stack pin f95520f.
 //! Actual wallet calls, caches and feed delivery are integration lane work.
 mod common;
 use bsv_tracker::*;
@@ -64,8 +64,8 @@ fn mined_orphaned_remined_broadcaster_latch() {
     assert_eq!(s.reask(), Some(&Reask::Spend));
     step(&mut s, &h, Input::Evidence(Evidence::Recheck));
     mined(&s, 102);
-    // Tracker.recheck preserves the existing reask on success (Lean line 324).
-    assert_eq!(s.reask(), Some(&Reask::Spend));
+    // The landed Tracker.recheck clears the completed trigger (Lean line 340).
+    assert_eq!(s.reask(), None);
 }
 
 #[test]

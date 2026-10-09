@@ -2,7 +2,7 @@
 
 Every incident in the matrix is one incident: a word about the chain was written once by one machine, believed by the next, and never re-asked when the chain moved (`docs/STEP-BACK-2026-10.md` section 0). The tracker is the component that owns the act of re-asking. Per transaction it holds one word, the evidence behind the word, the hints it has heard, and the next re-ask. Only headers and proofs change a word. Every broadcaster word is a hint that schedules a re-ask and changes nothing by itself. A reorg re-asks the transactions whose proof sits at or above the fork point and no other. It is a library, one Rust crate with a wasm32 build, hosted by the wallet, the overlay engine and the app layer, so that the three hold the same word from the same code.
 
-\[SRC\] The paragraph above is section 0 of the tracker charter at `bsv-stack-lean@24f22f808b1fb44ce9bf128ec89ac5c8839d9d60 docs/charters/tracker.md:9`. The executable transition contract is `lean/Tracker.lean:238-397` at that pin. This repository is the local crate implementation of lane A6 #30. Proposed GitHub home \[D\]: `Calhooon/bsv-tracker`, subject to the owner's naming ruling. There is no remote or publication from this lane.
+\[SRC\] The paragraph above is section 0 of the tracker charter at `bsv-stack-lean@f95520fcd85e066ec341faffa9dd8f1f8f35a37e docs/charters/tracker.md:9`. The executable transition contract is `lean/Tracker.lean:247-408` at that pin. This repository is the local crate implementation of lane A6 #30. Proposed GitHub home \[D\]: `Calhooon/bsv-tracker`, subject to the owner's naming ruling. There is no remote or publication from this lane.
 
 ## Evidence and words
 
@@ -16,7 +16,7 @@ A failed proof check returns `CheckError`, keeps the word, and schedules a re-as
 
 ## The host's four things
 
-The host supplies `Headers`, `ProofFetcher`, `HintSource` and `Clock`. Headers answer from one fresh, verified active-chain snapshot, using `header_at` and `tip_height`. The default `check` method performs the merkle arithmetic and keeps the matching header. Header validity and active-chain selection are the host's obligations, corresponding to `HeadersAreTheActiveChain` \[SRC, `lean/Tracker.lean:1021`\]. The crate uses the charter's header projection, `{ hash, merkle_root }`; bsv-rs 0.3.35 exports `MerklePath` and `ChainTracker`, and no full block-header type from `transaction/mod.rs:104-168` \[SRC, bsv-rs@7bc623c\]. No header validity rule is implemented here.
+The host supplies `Headers`, `ProofFetcher`, `HintSource` and `Clock`. Headers answer from one fresh, verified active-chain snapshot, using `header_at` and `tip_height`. The default `check` method performs the merkle arithmetic and keeps the matching header. Header validity and active-chain selection are the host's obligations, corresponding to `HeadersAnswerTheActiveChain` \[SRC, `lean/Tracker.lean:1194`\]. The crate uses the charter's header projection, `{ hash, merkle_root }`; bsv-rs 0.3.35 exports `MerklePath` and `ChainTracker`, and no full block-header type from `transaction/mod.rs:104-168` \[SRC, bsv-rs@7bc623c\]. No header validity rule is implemented here.
 
 Proof transitions call the default `Headers::check` through an internal snapshot wrapper. A host override returning an older checked capability cannot bypass current `header_at` and `tip_height` lookups. This applies to our own proof and competitor proofs. \[X\] A regression exercises an override returning cached evidence while the current snapshot is unavailable.
 
@@ -83,7 +83,7 @@ These three code sketches are compiled as documentation tests \[X\], but remain 
 
 \[X\] The two scenarios of record, the anonymized two-proof production witness, and the four application-contract scenarios replay the tracker portions with in-memory headers and synthetic proofs. The pending-wallet-call scenario tests only tracker inputs, not prompt cancellation or deadline enforcement. Host cache TTLs, ETags, counts, feed delivery, node behavior and beta integrations remain unverified \[D\]. Four property tests are named `mined_implies_checked_proof`, `reorg_reasks_at_or_above`, `hint_changes_no_chain_word`, and `same_evidence_same_word`. The last compares chain words, evidence and suspect marks; hint-tier words may differ, exactly as in Lean.
 
-\[SRC\] A successful `Tracker.recheck` preserves its existing `reask` at `lean/Tracker.lean:328`, including `Spend`; the scenario table says it clears. This crate follows the executable definition. Hosts treat `reask` as a trigger and deduplicate completed work externally; there is no clearing transition invented here. The captain should reconcile that table sentence before integration \[D\]. Heights use the SDK's `u32` and times use `u64`, a finite projection of Lean's naturals. An overflowing age deadline is never treated as due.
+\[SRC\] A successful `Tracker.recheck` clears the completed `reask` and the suspect mark at `lean/Tracker.lean:340`. The landed #31 machine reconciles the earlier discrepancy with the charter table. An unavailable header keeps the word and asks again. Heights use the SDK's `u32` and times use `u64`, a finite projection of Lean's naturals. An overflowing age deadline is never treated as due.
 
 ## Build and license
 

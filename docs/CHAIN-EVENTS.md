@@ -1,6 +1,6 @@
 # Chain event assumptions for #32
 
-[SRC] The Lean kinds and payload are `bsv-stack-lean@24f22f808b1fb44ce9bf128ec89ac5c8839d9d60 lean/Tracker.lean:128`, the charter's section 3, R1 section 2a, and application contract rule 1. [D] The wire projection in this crate is the flat version 1 shape below. The captain reconciles the final emitter's fields; no #32 emitter has been exercised by this lane.
+[SRC] The Lean kinds and payload are `bsv-stack-lean@f95520fcd85e066ec341faffa9dd8f1f8f35a37e lean/Tracker.lean:132`, the charter's section 3, R1 section 2a, and application contract rule 1. [D] The wire projection in this crate is the flat version 1 shape below. The captain reconciles the final emitter's fields; no #32 emitter has been exercised by this lane.
 
 | kind | required fields beside `v` and `kind` | example |
 |---|---|---|
