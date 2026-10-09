@@ -30,7 +30,7 @@ impl TestHeaders {
             p.height(),
             Header {
                 hash: hash(block),
-                merkle_root: p.root().unwrap(),
+                merkle_root: p.path().compute_root(Some(p.txid())).unwrap(),
             },
         );
     }
@@ -58,11 +58,7 @@ pub fn step(s: &mut State, h: &TestHeaders, i: Input) {
     s.step(&params(), h, i).unwrap();
 }
 pub fn hint(status: HintStatus, observed: u64) -> Input {
-    Input::Hint(Hint {
-        source: "stub broadcaster".into(),
-        status,
-        observed,
-    })
+    Input::Hint(Hint::new("stub broadcaster", status, observed))
 }
 pub fn reorg(height: u32) -> ChainEvent {
     ChainEvent::Reorg {
@@ -77,7 +73,11 @@ pub fn mined(s: &State, height: u32) {
     let evidence = s.evidence().unwrap();
     assert_eq!(evidence.height(), height);
     assert_eq!(
-        evidence.proof().root().unwrap(),
+        evidence
+            .proof()
+            .path()
+            .compute_root(Some(s.txid()))
+            .unwrap(),
         evidence.header().merkle_root
     );
 }

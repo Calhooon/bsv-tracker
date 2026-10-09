@@ -1,15 +1,19 @@
-//! A pure transaction tracker following `Tracker.step` in the tracker charter.
-//! The host supplies every input and executes every returned re-ask.
+#![forbid(unsafe_code)]
+#![doc = include_str!("../README.md")]
 
 mod events;
 mod evidence;
 mod hints;
+mod host;
 mod state;
+mod tracker;
 
 pub use events::{decode_envelope, ChainEnvelope, ChainEvent, DecodeError};
 pub use evidence::{CheckError, CheckedProof, Header, HeaderError, Headers, Proof};
-pub use hints::{Hint, HintStatus, Verdict};
+pub use hints::{Hint, HintStatus, Verdict, VerdictError};
+pub use host::{Clock, HintSource, ProofFetcher, SpendCheck};
 pub use state::{Evidence, HostAction, Input, Mined, NodeVerdict, Params, Reask, State, Word};
+pub use tracker::{ChainUpdate, Tracker};
 
 /// The height named by a BRC-74 path.
 pub type Height = u32;

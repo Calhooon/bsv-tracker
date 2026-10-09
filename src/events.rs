@@ -37,13 +37,41 @@ pub enum ChainEvent {
 }
 
 /// The assumed flat version 1 chain-event envelope.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ChainEnvelope {
     /// The envelope version; currently exactly 1.
-    pub v: u64,
+    v: u64,
     /// The event's kind and fields, flattened beside the version.
     #[serde(flatten)]
-    pub event: ChainEvent,
+    event: ChainEvent,
+}
+
+impl ChainEnvelope {
+    /// Wrap an event in the supported version.
+    pub fn new(event: ChainEvent) -> Self {
+        Self { v: 1, event }
+    }
+    /// The validated wire version.
+    pub fn version(&self) -> u64 {
+        self.v
+    }
+    /// The decoded event.
+    pub fn event(&self) -> &ChainEvent {
+        &self.event
+    }
+    /// Consume the envelope to deliver its decoded event.
+    pub fn into_event(self) -> ChainEvent {
+        self.event
+    }
+}
+
+impl<'de> Deserialize<'de> for ChainEnvelope {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        decode_value(value)
+            .map(Self::new)
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 /// A fault the host must report, without feeding an event to the tracker.
@@ -67,11 +95,15 @@ impl std::error::Error for DecodeError {}
 /// Pure decoding, with the version gated before the shape, independent of JSON
 /// key order. Unknown fields, kinds and versions are reported errors.
 pub fn decode_envelope(bytes: &[u8]) -> Result<ChainEvent, DecodeError> {
-    let mut value: serde_json::Value =
+    let value: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|e| DecodeError::UnknownShape {
             version: None,
             detail: e.to_string(),
         })?;
+    decode_value(value)
+}
+
+fn decode_value(mut value: serde_json::Value) -> Result<ChainEvent, DecodeError> {
     let version = value.get("v").and_then(serde_json::Value::as_u64);
     let Some(v) = version else {
         return Err(DecodeError::UnknownShape {

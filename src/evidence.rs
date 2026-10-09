@@ -97,6 +97,20 @@ impl Proof {
 
 /// A capability produced only by [`Headers::check`]. There is no unchecked
 /// constructor or deserializer; the retained proof and header are immutable.
+///
+/// ```compile_fail
+/// use bsv_tracker::{CheckedProof, Header, Proof};
+/// use bsv_rs::transaction::MerklePath;
+/// let txid = "01".repeat(32);
+/// let proof = Proof::new(&txid, MerklePath::from_coinbase_txid(&txid, 10)).unwrap();
+/// let header = Header { hash: "02".repeat(32), merkle_root: txid.clone() };
+/// let _ = CheckedProof { proof, header, root: txid, depth: 1 };
+/// ```
+///
+/// ```compile_fail
+/// use bsv_tracker::CheckedProof;
+/// let _ = serde_json::from_str::<CheckedProof>("{}");
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckedProof {
     proof: Proof,

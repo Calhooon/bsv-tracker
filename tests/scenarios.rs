@@ -177,23 +177,34 @@ fn contract_2_pending_wallet_call_tracker_projection() {
     // The approval machine owns deadline enforcement. Only its successful
     // T1 enters the tracker; the other calls produce no tracker input.
     let h = TestHeaders::default();
-    let mut t1 = State::new(hash(1));
-    step(&mut t1, &h, Input::Host(HostAction::Build));
-    assert_eq!(t1.word(), &Word::Built);
-    step(&mut t1, &h, hint(HintStatus::Accepted, 5));
-    assert_eq!(t1.word(), &Word::Announced);
-    let mut tracked = vec![t1];
-    for _deadline_outcome in ["expired", "cancelled", "expired"] {
+    let mut tracked = Tracker::new(params());
+    tracked
+        .apply(&hash(1), &h, Input::Host(HostAction::Build))
+        .unwrap();
+    assert_eq!(tracked.get(&hash(1)).unwrap().word(), &Word::Built);
+    tracked
+        .apply(&hash(1), &h, hint(HintStatus::Accepted, 5))
+        .unwrap();
+    assert_eq!(tracked.get(&hash(1)).unwrap().word(), &Word::Announced);
+    for now in [60, 40, 90] {
+        tracked
+            .apply(&hash(1), &h, Input::Host(HostAction::Tick(now)))
+            .unwrap();
+        assert_eq!(tracked.get(&hash(1)).unwrap().word(), &Word::Announced);
         assert_eq!(tracked.len(), 1);
-        assert_eq!(tracked[0].word(), &Word::Announced);
+        for txid in 2..=4 {
+            assert!(tracked.get(&hash(txid)).is_none());
+        }
     }
     // If a wallet broadcasts anyway, the lost call cannot hide its hints.
-    let mut gap = State::new(hash(3));
-    step(&mut gap, &h, Input::Host(HostAction::Build));
-    assert_eq!(gap.word(), &Word::Built);
-    step(&mut gap, &h, hint(HintStatus::Accepted, 90));
-    assert_eq!(gap.word(), &Word::Announced);
-    tracked.push(gap);
+    tracked
+        .apply(&hash(3), &h, Input::Host(HostAction::Build))
+        .unwrap();
+    assert_eq!(tracked.get(&hash(3)).unwrap().word(), &Word::Built);
+    tracked
+        .apply(&hash(3), &h, hint(HintStatus::Accepted, 90))
+        .unwrap();
+    assert_eq!(tracked.get(&hash(3)).unwrap().word(), &Word::Announced);
     assert_eq!(tracked.len(), 2);
 }
 
