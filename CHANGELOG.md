@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (2026-10-09, unpublished)
+## 0.1.0 (2026-10-09)
 
 - Implement the tracker charter's nine words and Lean transition machine.
 - Require an immutable `CheckedProof` from `Headers::check` for mined words.
