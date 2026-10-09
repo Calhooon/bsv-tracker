@@ -257,6 +257,49 @@ struct CountHeaders {
     inner: TestHeaders,
     lookups: Cell<usize>,
 }
+
+#[test]
+fn cached_host_check_cannot_bypass_fail_closed_snapshot_lookup() {
+    struct CachedCheck {
+        current: TestHeaders,
+        old: CheckedProof,
+    }
+    impl Headers for CachedCheck {
+        fn header_at(&self, height: u32) -> Result<Option<Header>, HeaderError> {
+            self.current.header_at(height)
+        }
+        fn tip_height(&self) -> Result<u32, HeaderError> {
+            self.current.tip_height()
+        }
+        fn check(&self, _proof: Proof) -> Result<CheckedProof, CheckError> {
+            Ok(self.old.clone())
+        }
+    }
+    let txid = hash(1);
+    let p = proof(&txid, 10, 2);
+    let mut current = TestHeaders::default();
+    current.insert(&p, 10);
+    let old = current.check(p.clone()).unwrap();
+    current.fault = true;
+    let headers = CachedCheck { current, old };
+    let mut s = State::new(&txid);
+    let result = s.step(&params(), &headers, Input::Evidence(Evidence::Proof(p)));
+    assert!(matches!(result, Err(CheckError::Headers(_))), "{result:?}");
+    assert_eq!(s.word(), &Word::Unknown);
+    assert_eq!(s.evidence(), None);
+    assert_eq!(s.reask(), Some(&Reask::ProofFailed { height: 10 }));
+
+    let mut competitor = State::new(hash(2));
+    let result = competitor.step(
+        &params(),
+        &headers,
+        Input::Evidence(Evidence::Competitor(proof(&txid, 10, 2))),
+    );
+    assert!(matches!(result, Err(CheckError::Headers(_))), "{result:?}");
+    assert_eq!(competitor.word(), &Word::Unknown);
+    assert_eq!(competitor.evidence(), None);
+    assert_eq!(competitor.reask(), Some(&Reask::ProofFailed { height: 10 }));
+}
 impl Headers for CountHeaders {
     fn header_at(&self, height: u32) -> Result<Option<Header>, HeaderError> {
         self.lookups.set(self.lookups.get() + 1);

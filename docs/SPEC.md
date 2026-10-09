@@ -21,6 +21,8 @@
 
 ## The four test explainers
 
+[X] `cached_host_check_cannot_bypass_fail_closed_snapshot_lookup` exercises a host returning an old capability from its `check` override while current header lookups fault. Own and competitor proofs fail closed. Transitions wrap the host's snapshot methods and invoke the default `Headers::check`, preserving the single capability constructor and current-snapshot check.
+
 `mined_implies_checked_proof` checks every prefix of randomized evidence, hint and host traces. A mined word's stored path is for its own txid and height, computes the retained header's merkle root, and has positive depth. The only writing transition constructs both the word and retained record from the same checked capability. This corresponds to the invariant at Lean lines 655-659. It does not establish that the host's header snapshot is the node's active chain.
 
 `reorg_reasks_at_or_above` generates registries containing mined and unmined words at random heights. It compares the indexed result set to the exact affected set, asserts stale plus the reorg trigger for every affected word, and full state equality for every other transaction. This exercises the theorem at lines 665-667, `reorg_spares_below`, `reorg_spares_unmined`, `reorgReask_only` and the bound.

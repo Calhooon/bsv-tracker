@@ -199,9 +199,9 @@ exit: 101
 
 ## Completion, 2026-10-09
 
-[X] Witness commit: `f75c0d3084c8a2ce3f2411239ce60f3148a87830 test: record seven tracker witnesses before the transition machine`. New repository has no parent/base before that commit. Work is on the lane-authorized `main`, with no remote. Implementation changes are committed after the runs below; use `git log` to obtain that commit's full sha.
+[X] Witness commit: `f75c0d3084c8a2ce3f2411239ce60f3148a87830 test: record seven tracker witnesses before the transition machine`. Implementation commit: `4cc6999b249449033622b4496e84b95d042a2c89 feat: derive tracker words from checked proofs and target reasks`. New repository has no parent/base before the witness commit. Work is on the lane-authorized `main`, with no remote. The boundary correction and final runs are recorded below and in the subsequent local commit.
 
-[X] The seven witness tests are now green. The complete suite is 26 passed, 0 failed, 0 ignored: four property tests, seven scenario tests, seven branch/scheduler tests, two vocabulary tests and six documentation tests. Of the documentation tests, three reject unchecked construction/deserialization and three compile the host sketches. The ARC fixture has 20 cases and is byte-identical to its pin. Each named property runs 256 deterministic cases. Expected fixture roots and property observations call the SDK directly rather than echoing the tracker's root wrapper.
+[X] The seven witness tests are now green. The complete final suite is 27 passed, 0 failed, 0 ignored: four property tests, seven scenario tests, eight branch/scheduler/boundary tests, two vocabulary tests and six documentation tests. Of the documentation tests, three reject unchecked construction/deserialization and three compile the host sketches. The ARC fixture has 20 cases and is byte-identical to its pin. Each named property runs 256 deterministic cases. Expected fixture roots and property observations call the SDK directly rather than echoing the tracker's root wrapper.
 
 [X] Required gates: native suite, clippy with warnings denied, fmt check, wasm32 feature build and documentation with RUSTDOCFLAGS=-Dwarnings all exit 0. Environment:
 
@@ -224,7 +224,7 @@ bsv-rs v0.3.35
 └── bsv-rs feature "transaction" (*)
 ```
 
-[X] A local audit compared the README paragraph with charter section 0 at the stack pin, compared the ARC vector's bytes with bsv-rs@7bc623c, checked Cargo.lock's registry source/version, inspected the normal dependency tree for reqwest/tokio, checked the authored files for an em dash, and ran git diff --check. All passed. `rg -n '—|\\bfirst\\b' README.md CHANGELOG.md docs src tests LICENSE-APACHE LICENSE-MIT` had empty output and exit 1 (no match). No CI, server, node, wallet, deployment, network transport or private-program material was used. The sole external issue read was `gh api repos/Calgooon/bsv-stack-lean/issues/30`; it succeeded and left the issue open.
+[X] A local audit compared the README paragraph with charter section 0 at the stack pin, compared the ARC vector's bytes with bsv-rs@7bc623c, checked Cargo.lock's registry source/version, inspected the normal dependency tree for reqwest/tokio, checked the authored files for an em dash, and ran git diff --check. All passed. The earlier wording search returned no matches (exit 1). No CI, server, node, wallet, deployment, network transport or private-program material was used. The sole external issue read was `gh api repos/Calgooon/bsv-stack-lean/issues/30`; it succeeded and left the issue open.
 
 [D] Unverified: host integrations, real feed delivery and no-feed polling, #32's final wire schema, cache invalidation/TTL/ETags/count attestations, wallet approval deadlines/cancellation, header freshness/validity/active-chain selection, trusted-node production policy, browser execution and JavaScript bindings, and formal Rust-to-Lean refinement. Local tracker projections do not upgrade the corpus's host-replay labels. `Headers` uses the charter's header projection; the SDK does not export a full transaction-module header type.
 
@@ -673,3 +673,176 @@ $ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target CARGO_BU
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.96s
    Generated /Users/johncalhoun/bsv/targets/a6/bsv-tracker-target/doc/bsv_tracker/index.html
 ```
+
+## Snapshot override boundary and final gates, 2026-10-09
+
+[X] A boundary review found that a host could override `Headers::check` with a cached capability. With current headers unavailable, the pre-fix transition wrongly returned `Ok(())` and wrote a mined word. The added witness failed for that reason. Own and competitor transitions now invoke the default `Headers::check` through an internal wrapper forwarding current snapshot lookups; that method remains the only capability constructor. The witness now passes, preserving `Unknown`, returning `CheckError::Headers` and scheduling `ProofFailed(10)` for both kinds of proof.
+
+### Boundary witness before the fix
+
+[X] Command and tail, exit 101.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target CARGO_BUILD_JOBS=4 cargo test --test transitions cached_host_check_cannot_bypass_fail_closed_snapshot_lookup
+   Compiling bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/bsv-tracker)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.04s
+     Running tests/transitions.rs (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target/debug/deps/transitions-e7130c28c0d21cbd)
+
+running 1 test
+test cached_host_check_cannot_bypass_fail_closed_snapshot_lookup ... FAILED
+
+failures:
+
+---- cached_host_check_cannot_bypass_fail_closed_snapshot_lookup stdout ----
+
+thread 'cached_host_check_cannot_bypass_fail_closed_snapshot_lookup' (43561431) panicked at tests/transitions.rs:287:5:
+Ok(())
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    cached_host_check_cannot_bypass_fail_closed_snapshot_lookup
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test transitions`
+```
+
+### Boundary witness after the fix
+
+[X] Command and tail, exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target CARGO_BUILD_JOBS=4 cargo test --test transitions cached_host_check_cannot_bypass_fail_closed_snapshot_lookup
+   Compiling bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/bsv-tracker)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.07s
+     Running tests/transitions.rs (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target/debug/deps/transitions-e7130c28c0d21cbd)
+
+running 1 test
+test cached_host_check_cannot_bypass_fail_closed_snapshot_lookup ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+```
+
+### Formatting after the boundary fix
+
+[X] Command and tail, exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target CARGO_BUILD_JOBS=4 cargo fmt --all
+(empty output)
+```
+
+### Final native suite after the boundary fix
+
+[X] Command and tail, exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target CARGO_BUILD_JOBS=4 cargo test
+   Compiling bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/bsv-tracker)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.69s
+     Running unittests src/lib.rs (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target/debug/deps/bsv_tracker-25e0a87c7ed6b7bd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/properties.rs (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target/debug/deps/properties-de7cb4f8a30b8928)
+
+running 4 tests
+test reorg_reasks_at_or_above ... ok
+test hint_changes_no_chain_word ... ok
+test same_evidence_same_word ... ok
+test mined_implies_checked_proof ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.92s
+
+     Running tests/scenarios.rs (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target/debug/deps/scenarios-a029baa32b53a4d2)
+
+running 7 tests
+test contract_2_pending_wallet_call_tracker_projection ... ok
+test contract_3_tracker_word_only_chain_word ... ok
+test contract_1_versioned_envelope_fails_loud ... ok
+test reorg_announced_nobody_hears_go_server_ts_client_shape ... ok
+test contract_4_served_proof_tracker_projection ... ok
+test mined_orphaned_remined_broadcaster_latch ... ok
+test production_proofs_orphaned_healed_without_a_hand ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/transitions.rs (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target/debug/deps/transitions-e7130c28c0d21cbd)
+
+running 8 tests
+test age_abandon_and_agreeing_hints_follow_the_lean_table ... ok
+test malformed_sdk_paths_are_rejected_before_root_reduction ... ok
+test fork_tip_recheck_and_invalidation_retain_the_evidence_record ... ok
+test envelopes_round_trip_and_reject_every_unknown_shape ... ok
+test cached_host_check_cannot_bypass_fail_closed_snapshot_lookup ... ok
+test proof_checks_fail_closed_and_bind_the_tracked_txid ... ok
+test node_and_competitor_evidence_outrank_hints_but_reask_a_mined_word ... ok
+test collection_routes_only_affected_heights_headers_and_suspects ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/verdicts.rs (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target/debug/deps/verdicts-1dd76d88a07b161d)
+
+running 2 tests
+test arcade_twelve_words_and_reorg_markers_remain_hints ... ok
+test arc_p0_2_twenty_bodies_are_only_hints ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests bsv_tracker
+
+running 6 tests
+test src/state.rs - state::Mined (line 8) - compile fail ... ok
+test src/evidence.rs - evidence::CheckedProof (line 101) - compile fail ... ok
+test src/evidence.rs - evidence::CheckedProof (line 110) - compile fail ... ok
+test src/lib.rs - (line 63) ... ok
+test src/lib.rs - (line 32) ... ok
+test src/lib.rs - (line 48) ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
+```
+
+### Final clippy after the boundary fix
+
+[X] Command and tail, exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target CARGO_BUILD_JOBS=4 cargo clippy --all-targets -- -D warnings
+    Checking bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/bsv-tracker)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.58s
+```
+
+### Final formatting check after the boundary fix
+
+[X] Command and tail, exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target CARGO_BUILD_JOBS=4 cargo fmt --all -- --check
+(empty output)
+```
+
+### Final wasm build after the boundary fix
+
+[X] Command and tail, exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target CARGO_BUILD_JOBS=4 cargo build --target wasm32-unknown-unknown --features wasm
+   Compiling bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/bsv-tracker)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.62s
+```
+
+### Final rustdoc after the boundary fix
+
+[X] Command and tail, exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target CARGO_BUILD_JOBS=4 RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps
+ Documenting bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/bsv-tracker)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.65s
+   Generated /Users/johncalhoun/bsv/targets/a6/bsv-tracker-target/doc/bsv_tracker/index.html
+```
+
+[X] Final total: 27 passed, 0 failed, 0 ignored. This is four properties, seven scenarios, eight branch/scheduler/boundary tests, two vocabulary tests and six documentation tests. The previous 26-test runs above are the recorded implementation history before the additional boundary witness.

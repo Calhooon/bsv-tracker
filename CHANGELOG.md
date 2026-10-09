@@ -4,6 +4,7 @@
 
 - Implement the tracker charter's nine words and Lean transition machine.
 - Require an immutable `CheckedProof` from `Headers::check` for mined words.
+- Run its default checker against the current snapshot even when the host overrides `check` with a cached capability.
 - Bind SDK BRC-74 paths to the proven txid and retain the checked header and depth.
 - Record broadcaster hints without writing chain words, including the ARC vector and Arcade reorg vocabulary.
 - Route reorgs by affected mined heights, invalidations by checked header hash and tips by suspect txid.

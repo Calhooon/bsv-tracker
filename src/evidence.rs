@@ -149,6 +149,8 @@ pub trait Headers {
     /// The active height from the same snapshot.
     fn tip_height(&self) -> Result<Height, HeaderError>;
     /// Reduce a bound SDK proof and check it against the active header.
+    /// Tracker transitions always invoke this default implementation through
+    /// a snapshot wrapper, so host overrides cannot bypass current lookups.
     fn check(&self, proof: Proof) -> Result<CheckedProof, CheckError> {
         let root = proof.root()?;
         let height = proof.height();
@@ -170,4 +172,23 @@ pub trait Headers {
             depth: u64::from(tip) - u64::from(height) + 1,
         })
     }
+}
+
+pub(crate) fn check_snapshot<H: Headers + ?Sized>(
+    headers: &H,
+    proof: Proof,
+) -> Result<CheckedProof, CheckError> {
+    struct Snapshot<'a, H: ?Sized>(&'a H);
+
+    impl<H: Headers + ?Sized> Headers for Snapshot<'_, H> {
+        fn header_at(&self, height: Height) -> Result<Option<Header>, HeaderError> {
+            self.0.header_at(height)
+        }
+
+        fn tip_height(&self) -> Result<Height, HeaderError> {
+            self.0.tip_height()
+        }
+    }
+
+    Headers::check(&Snapshot(headers), proof)
 }

@@ -218,7 +218,7 @@ impl State {
             self.reask = Some(Reask::ProofFailed { height });
             return Err(CheckError::TxidMismatch);
         }
-        match headers.check(proof) {
+        match crate::evidence::check_snapshot(headers, proof) {
             Ok(checked) => {
                 let checked = Arc::new(checked);
                 self.word = Word::Mined(Mined {
@@ -243,7 +243,7 @@ impl State {
     ) -> Result<(), CheckError> {
         let height = proof.height();
         let competitor = proof.txid().to_owned();
-        match headers.check(proof) {
+        match crate::evidence::check_snapshot(headers, proof) {
             Ok(_) => {
                 match &mut self.word {
                     Word::Mined(_) => self.reask = Some(Reask::Recheck),
