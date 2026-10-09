@@ -1,6 +1,6 @@
 # A6 #30 verification record
 
-[SRC] Initial specification: bsv-stack-lean@24f22f808b1fb44ce9bf128ec89ac5c8839d9d60, `docs/charters/tracker.md`, `maps/tracker.json`, `lean/Tracker.lean`, `docs/APP-CONTRACT.md` and the seven named scenarios. Final machine pin: `f95520fcd85e066ec341faffa9dd8f1f8f35a37e`, including the landed #31 successful-recheck correction recorded at the end. SDK and ARC vocabulary: bsv-rs@7bc623c, `tests/vectors/arc_tx_status_verdicts.json`; the actual dependency is crates.io `bsv-rs =0.3.35` with only `transaction`, and `wasm` under this crate's `wasm` feature.
+[SRC] Initial specification: bsv-stack-lean@24f22f808b1fb44ce9bf128ec89ac5c8839d9d60, `docs/charters/tracker.md`, `maps/tracker.json`, `lean/Tracker.lean`, `docs/APP-CONTRACT.md` and the seven named scenarios. Final machine pin: `f95520fcd85e066ec341faffa9dd8f1f8f35a37e`, including the landed #31 successful-recheck correction recorded at the end. SDK and ARC vocabulary: bsv-rs@7bc623c, `tests/vectors/arc_tx_status_verdicts.json`; the actual dependency is crates.io `bsv-rs` at the caret requirement `0.3.35` (the tracked `Cargo.lock` holds 0.3.35) with only `transaction`, and `wasm` under this crate's `wasm` feature.
 
 [X] New repository, `main`, no base commit, no remote. This is the lane's explicit exception to the shared worktree rule. No host integration or deployment is authorized by this lane.
 
