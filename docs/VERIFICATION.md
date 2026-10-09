@@ -1023,4 +1023,329 @@ $ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-target CARGO_BU
    Generated /Users/johncalhoun/bsv/targets/a6/bsv-tracker-target/doc/bsv_tracker/index.html
 ```
 
-[X] Final total: 28 passed, 0 failed, 0 ignored: four properties, seven scenarios, nine transition/scheduler/boundary tests, two vocabulary tests and six documentation tests. All five required gates exit 0. The older 26/27-test runs are history; this section is the final evidence.
+[X] Total at base `60cc768`: 28 passed, 0 failed, 0 ignored: four properties, seven scenarios, nine transition/scheduler/boundary tests, two vocabulary tests and six documentation tests. All five required gates exit 0. The older 26/27-test runs are history; the envelope reconciliation below supersedes this base count.
+
+
+## Envelope reconciliation (2026-10-09)
+
+[X] Repository `/Users/johncalhoun/bsv/bsv-tracker`, no remote. Base `60cc7686b1ed748afa591cdc4094ee2f9e38cebd`; branch `a6-30/envelope-reconcile`; worktree `/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope`. This section is committed with the implementation that follows witness commit `dcc70f8` (`test: pin six emitter envelopes to expose tracker schema drift`). Main remains at the base; no push, PR, stash, transport, wallet operation or sub-agent was used.
+
+[SRC] Both reference files were read only through `git -C /Users/johncalhoun/bsv/rust-chaintracks show a62f9ed:<path>`. Schema: `docs/CHAIN-EVENTS.md:13-35`; exact H/outpoint/event widths: `src/events.rs:13-85`; shape checks: `src/events.rs:125-185`; host fault rule: `docs/CHAIN-EVENTS.md:200-206`; six examples: `docs/CHAIN-EVENTS.md:265,269,273,277,281,285`. The examples match the stack's `docs/p0/a3-32-chain-event-envelope.md` copy byte for byte, and the fixture files preserve them with a trailing newline.
+
+[X] The six example witnesses fail before implementation: five have unknown fields or header/outpoint maps where the old projection expects strings; invalidated fails direct ChainEvent serde on the previously unsupported `v`. After implementation, all six parse and round-trip through ChainEvent, ChainEnvelope and decode_envelope. Invalidated/frozen also match example bytes; header-bearing cases compare JSON values because object key order is not a schema rule. Four additional tests cover typed future-kind/version faults, malformed known shapes/legacy fields, inclusive reorg routing with historical evidence, and a tip payload that cannot bypass a failed checked snapshot.
+
+[X] Base suite 28/28; final suite 38/38 (ten envelope tests, four properties at 256 cases each, seven scenarios, nine transition/boundary tests, two vocabulary tests and six doc tests). All final gates exit 0. The transient rustdoc failure was three unescaped [SRC] labels in API documentation, corrected below; no machine behavior changed in that repair.
+
+[X] `src/evidence.rs`, `src/state.rs`, `src/tracker.rs`, Cargo.toml and Cargo.lock are byte-identical to the base. The decoder accepts the pinned shape, including required H fields and exactly two competing headers; it validates relationships and returns UnknownKind/UnknownVersion/UnknownShape instead of an event on a fault. Headers::check still supplies checked inclusion evidence. Reorg routing uses forkHeight, inclusive of the deactivated headers' heights, while retaining the original checked proof record. The 0.1.0 changelog records the correction; complete field changes and caller migration are in docs/CHAIN-EVENTS.md.
+
+[D] This is an unpublished 0.1.0 Rust/accepted-shape API correction; after publication it would require a minor release. No stored-state migration is involved: old proofs still re-enter through targeted checking, bounded by tracked rows. Risk before shipping: hosts must report a returned fault and preserve its unacknowledged cursor; the crate has no transport to enforce that behavior. Live emitter delivery, cursor persistence, host adapters and browser bindings remain unverified. Next: local branch review, then the app badge, overlay settlement and wallet spend adapters. Rollback: return a host to its previous adapter, keeping the old hash-only projection disconnected from this emitter.
+
+### Exact validation commands and tails
+
+[X] Every run below used the worktree and the explicit target directory with four build jobs. Logs live alongside that target directory, named `bsv-tracker-envelope-target-<run>.log`.
+
+
+### baseline
+
+[X] Exit 0. Total: 28 passed, 0 failed, 0 ignored.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo test --workspace
+
+running 6 tests
+test src/state.rs - state::Mined (line 8) - compile fail ... ok
+test src/evidence.rs - evidence::CheckedProof (line 110) - compile fail ... ok
+test src/evidence.rs - evidence::CheckedProof (line 101) - compile fail ... ok
+test src/lib.rs - (line 32) ... ok
+test src/lib.rs - (line 63) ... ok
+test src/lib.rs - (line 48) ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
+```
+
+
+### red
+
+[X] Exit 101. Total: 0 passed, 6 failed, 0 ignored.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo test --test chain_events
+   Compiling bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.50s
+     Running tests/chain_events.rs (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target/debug/deps/chain_events-422d103fce1076d1)
+
+running 6 tests
+test pinned_fork_round_trip ... FAILED
+test pinned_tip_round_trip ... FAILED
+test pinned_reorg_round_trip ... FAILED
+test pinned_frozen_round_trip ... FAILED
+test pinned_tip_age_round_trip ... FAILED
+test pinned_invalidated_round_trip ... FAILED
+
+failures:
+
+---- pinned_fork_round_trip stdout ----
+
+thread 'pinned_fork_round_trip' (43951397) panicked at tests/chain_events.rs:8:50:
+the pinned envelope must decode: UnknownShape { version: Some(1), detail: "invalid type: map, expected a string" }
+
+---- pinned_tip_round_trip stdout ----
+
+thread 'pinned_tip_round_trip' (43951402) panicked at tests/chain_events.rs:8:50:
+the pinned envelope must decode: UnknownShape { version: Some(1), detail: "unknown field `header`, expected `height` or `hash`" }
+
+---- pinned_reorg_round_trip stdout ----
+
+thread 'pinned_reorg_round_trip' (43951400) panicked at tests/chain_events.rs:8:50:
+the pinned envelope must decode: UnknownShape { version: Some(1), detail: "unknown field `deactivatedHeaders`, expected one of `forkHeight`, `depth`, `deactivated`, `newTip`" }
+
+---- pinned_frozen_round_trip stdout ----
+
+thread 'pinned_frozen_round_trip' (43951398) panicked at tests/chain_events.rs:8:50:
+the pinned envelope must decode: UnknownShape { version: Some(1), detail: "invalid type: map, expected a string" }
+
+---- pinned_tip_age_round_trip stdout ----
+
+thread 'pinned_tip_age_round_trip' (43951401) panicked at tests/chain_events.rs:8:50:
+the pinned envelope must decode: UnknownShape { version: Some(1), detail: "unknown field `tip`, expected `seconds`" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- pinned_invalidated_round_trip stdout ----
+
+thread 'pinned_invalidated_round_trip' (43951399) panicked at tests/chain_events.rs:9:57:
+ChainEvent serde must gate v:1: Error("unknown field `v`, expected `blockHash`", line: 0, column: 0)
+
+
+failures:
+    pinned_fork_round_trip
+    pinned_frozen_round_trip
+    pinned_invalidated_round_trip
+    pinned_reorg_round_trip
+    pinned_tip_age_round_trip
+    pinned_tip_round_trip
+
+test result: FAILED. 0 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test chain_events`
+```
+
+
+### green-examples
+
+[X] Exit 0. Total: 6 passed, 0 failed, 0 ignored.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo test --test chain_events
+   Compiling bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.13s
+     Running tests/chain_events.rs (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target/debug/deps/chain_events-422d103fce1076d1)
+
+running 6 tests
+test pinned_invalidated_round_trip ... ok
+test pinned_frozen_round_trip ... ok
+test pinned_tip_age_round_trip ... ok
+test pinned_fork_round_trip ... ok
+test pinned_reorg_round_trip ... ok
+test pinned_tip_round_trip ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+
+### fmt-apply
+
+[X] Exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo fmt --all
+(empty output)
+```
+
+
+### green
+
+[X] Exit 0. Total: 10 passed, 0 failed, 0 ignored.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo test --test chain_events
+   Compiling bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.45s
+     Running tests/chain_events.rs (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target/debug/deps/chain_events-422d103fce1076d1)
+
+running 10 tests
+test pinned_invalidated_round_trip ... ok
+test pinned_frozen_round_trip ... ok
+test pinned_tip_age_round_trip ... ok
+test pinned_reorg_round_trip ... ok
+test future_kind_and_version_are_typed_host_faults ... ok
+test pinned_tip_round_trip ... ok
+test pinned_fork_round_trip ... ok
+test pinned_tip_header_cannot_bypass_the_checked_snapshot ... ok
+test pinned_reorg_keeps_the_inclusive_height_routing_and_evidence_record ... ok
+test known_shapes_refuse_legacy_fields_and_malformed_headers ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+
+### fmt-apply-final
+
+[X] Exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo fmt --all
+(empty output)
+```
+
+
+### test
+
+[X] Exit 0. Total: 38 passed, 0 failed, 0 ignored.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo test --workspace
+
+running 6 tests
+test src/state.rs - state::Mined (line 8) - compile fail ... ok
+test src/evidence.rs - evidence::CheckedProof (line 101) - compile fail ... ok
+test src/evidence.rs - evidence::CheckedProof (line 110) - compile fail ... ok
+test src/lib.rs - (line 32) ... ok
+test src/lib.rs - (line 63) ... ok
+test src/lib.rs - (line 48) ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+```
+
+
+### clippy
+
+[X] Exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo clippy --all-targets -- -D warnings
+    Checking proptest v1.11.0
+    Checking bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.32s
+```
+
+
+### fmt
+
+[X] Exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo fmt --all -- --check
+(empty output)
+```
+
+
+### wasm
+
+[X] Exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo build --target wasm32-unknown-unknown --features wasm
+   Compiling bsv-rs v0.3.35
+   Compiling bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 19.75s
+```
+
+
+### doc-failed
+
+[X] Exit 101.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps
+ Documenting bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope)
+error: unresolved link to `SRC`
+ --> src/events.rs:7:6
+  |
+7 | /// [SRC] rust-chaintracks@a62f9ed docs/CHAIN-EVENTS.md:13-23;
+  |      ^^^ no item named `SRC` in scope
+  |
+  = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+  = note: `-D rustdoc::broken-intra-doc-links` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(rustdoc::broken_intra_doc_links)]`
+
+error: unresolved link to `SRC`
+  --> src/events.rs:25:6
+   |
+25 | /// [SRC] rust-chaintracks@a62f9ed src/events.rs:43-48.
+   |      ^^^ no item named `SRC` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+error: unresolved link to `SRC`
+  --> src/events.rs:34:6
+   |
+34 | /// [SRC] rust-chaintracks@a62f9ed docs/CHAIN-EVENTS.md:24-35.
+   |      ^^^ no item named `SRC` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+error: could not document `bsv-tracker`
+```
+
+
+### doc
+
+[X] Exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps
+ Documenting bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.53s
+   Generated /Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target/doc/bsv_tracker/index.html
+```
+
+
+### final-test
+
+[X] Exit 0. Total: 38 passed, 0 failed, 0 ignored.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo test --workspace
+
+running 6 tests
+test src/evidence.rs - evidence::CheckedProof (line 110) - compile fail ... ok
+test src/state.rs - state::Mined (line 8) - compile fail ... ok
+test src/evidence.rs - evidence::CheckedProof (line 101) - compile fail ... ok
+test src/lib.rs - (line 48) ... ok
+test src/lib.rs - (line 63) ... ok
+test src/lib.rs - (line 32) ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+```
+
+
+### final-clippy
+
+[X] Exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo clippy --all-targets -- -D warnings
+    Checking bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.58s
+```
+
+
+### final-fmt
+
+[X] Exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo fmt --all -- --check
+(empty output)
+```
+
+
+### final-wasm
+
+[X] Exit 0.
+
+```text
+$ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target CARGO_BUILD_JOBS=4 cargo build --target wasm32-unknown-unknown --features wasm
+   Compiling bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.43s
+```

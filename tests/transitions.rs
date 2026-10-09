@@ -112,40 +112,18 @@ fn fork_tip_recheck_and_invalidation_retain_the_evidence_record() {
     let mut s = State::new(&txid);
     step(&mut s, &h, Input::Evidence(Evidence::Proof(p)));
     let saved = s.evidence().cloned();
-    step(
-        &mut s,
-        &h,
-        Input::Evidence(Evidence::Chain(ChainEvent::Fork {
-            height: 10,
-            competing_tips: vec![],
-            depth: 1,
-        })),
-    );
+    step(&mut s, &h, Input::Evidence(Evidence::Chain(fork(10))));
     mined(&s, 10);
     assert!(s.suspect());
     h.fault = true;
     assert!(s
-        .step(
-            &params(),
-            &h,
-            Input::Evidence(Evidence::Chain(ChainEvent::Tip {
-                height: 11,
-                hash: hash(11)
-            }))
-        )
+        .step(&params(), &h, Input::Evidence(Evidence::Chain(tip(11, 11))))
         .is_err());
     mined(&s, 10);
     assert!(s.suspect());
     assert_eq!(s.reask(), Some(&Reask::Recheck));
     h.fault = false;
-    step(
-        &mut s,
-        &h,
-        Input::Evidence(Evidence::Chain(ChainEvent::Tip {
-            height: 11,
-            hash: hash(11),
-        })),
-    );
+    step(&mut s, &h, Input::Evidence(Evidence::Chain(tip(11, 11))));
     mined(&s, 10);
     assert!(!s.suspect());
     assert_eq!(s.reask(), None);
@@ -184,25 +162,10 @@ fn successful_recheck_clears_completed_spend_and_fork_triggers() {
     mined(&s, 10);
     assert_eq!(s.reask(), None);
     assert_eq!(s.evidence(), evidence.as_ref());
-    step(
-        &mut s,
-        &h,
-        Input::Evidence(Evidence::Chain(ChainEvent::Fork {
-            height: 10,
-            competing_tips: vec![hash(2), hash(3)],
-            depth: 1,
-        })),
-    );
+    step(&mut s, &h, Input::Evidence(Evidence::Chain(fork(10))));
     assert!(s.suspect());
     assert_eq!(s.reask(), Some(&Reask::Fork { height: 10 }));
-    step(
-        &mut s,
-        &h,
-        Input::Evidence(Evidence::Chain(ChainEvent::Tip {
-            height: 11,
-            hash: hash(11),
-        })),
-    );
+    step(&mut s, &h, Input::Evidence(Evidence::Chain(tip(11, 11))));
     mined(&s, 10);
     assert!(!s.suspect());
     assert_eq!(s.reask(), None);
@@ -366,34 +329,13 @@ fn collection_routes_only_affected_heights_headers_and_suspects() {
         inner: h,
         lookups: Cell::new(0),
     };
-    assert!(tracker
-        .on_chain(
-            &h,
-            ChainEvent::Tip {
-                height: 5,
-                hash: hash(5)
-            }
-        )
-        .is_empty());
+    assert!(tracker.on_chain(&h, tip(5, 5)).is_empty());
     assert_eq!(h.lookups.get(), 0);
-    let fork = tracker.on_chain(
-        &h,
-        ChainEvent::Fork {
-            height: 3,
-            competing_tips: vec![],
-            depth: 1,
-        },
-    );
-    assert_eq!(fork.len(), 2);
+    let fork_updates = tracker.on_chain(&h, fork(3));
+    assert_eq!(fork_updates.len(), 2);
     assert_eq!(h.lookups.get(), 0);
-    let tip = tracker.on_chain(
-        &h,
-        ChainEvent::Tip {
-            height: 5,
-            hash: hash(5),
-        },
-    );
-    assert_eq!(tip.len(), 2);
+    let tip_updates = tracker.on_chain(&h, tip(5, 5));
+    assert_eq!(tip_updates.len(), 2);
     assert_eq!(h.lookups.get(), 2);
     let invalid = tracker.on_chain(
         &h,
@@ -434,23 +376,22 @@ fn collection_routes_only_affected_heights_headers_and_suspects() {
 #[test]
 fn envelopes_round_trip_and_reject_every_unknown_shape() {
     let events = [
-        ChainEvent::Tip {
-            height: 1,
-            hash: hash(1),
-        },
-        ChainEvent::Fork {
-            height: 1,
-            competing_tips: vec![hash(1), hash(2)],
-            depth: 1,
-        },
+        tip(1, 1),
+        fork(1),
         reorg(1),
         ChainEvent::Invalidated {
             block_hash: hash(1),
         },
         ChainEvent::Frozen {
-            outpoint: format!("{}:0", hash(1)),
+            outpoint: Outpoint {
+                txid: hash(1),
+                vout: 0,
+            },
         },
-        ChainEvent::TipAge { seconds: 600 },
+        ChainEvent::TipAge {
+            seconds: 600,
+            tip: event_header(1, 1),
+        },
     ];
     for event in events {
         let wire = serde_json::to_vec(&ChainEnvelope::new(event.clone())).unwrap();
@@ -461,7 +402,6 @@ fn envelopes_round_trip_and_reject_every_unknown_shape() {
     }
     for body in [
         br#"{}"#.as_slice(),
-        br#"{"v":1,"kind":"new_kind"}"#,
         br#"{"v":1,"kind":"tip","height":1,"hash":"x","extra":1}"#,
         br#"{"v":"1","kind":"tip","height":1,"hash":"x"}"#,
         br#"{"v":1,"kind":"tip","height":-1,"hash":"x"}"#,

@@ -8,7 +8,7 @@ mod host;
 mod state;
 mod tracker;
 
-pub use events::{decode_envelope, ChainEnvelope, ChainEvent, DecodeError};
+pub use events::{decode_envelope, ChainEnvelope, ChainEvent, DecodeError, EventHeader, Outpoint};
 pub use evidence::{CheckError, CheckedProof, Header, HeaderError, Headers, Proof};
 pub use hints::{Hint, HintStatus, Verdict, VerdictError};
 pub use host::{Clock, HintSource, ProofFetcher, SpendCheck};

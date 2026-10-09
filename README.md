@@ -77,9 +77,9 @@ These three code sketches are compiled as documentation tests \[X\], but remain 
 - `fn overlay_settlement(state: &State) -> SettlementDecision`
 - `fn wallet_spend_guard<H: Headers>(state: &mut State, params: &Params, headers: &H) -> Result<bool, CheckError>`
 
-## Envelope assumptions and replay scope
+## Envelope and replay scope
 
-\[D\] The flat #32 envelope has `v: 1`, `kind`, and exactly the fields in [docs/CHAIN-EVENTS.md](docs/CHAIN-EVENTS.md). Unknown versions, kinds, missing fields and extra fields are errors for the host's status surface. A fault produces no tracker input. The captain must reconcile this projection with #32's final wire schema, including the `time` and `tip` mentioned by that lane. No wire compatibility with its emitter is claimed by the local decode tests.
+\[SRC\] The flat #32 envelope is pinned to `rust-chaintracks@a62f9ed docs/CHAIN-EVENTS.md:13-35` and `src/events.rs:13-93`: `v: 1`, `kind`, full public headers with `chainWork`, and exactly the fields in [docs/CHAIN-EVENTS.md](docs/CHAIN-EVENTS.md). `ChainEvent` and `ChainEnvelope` serde both gate the version and shape. `decode_envelope` returns typed `UnknownVersion`, `UnknownKind` or `UnknownShape` errors for the host to report, producing no tracker input on a fault. \[X\] All six pinned example envelopes round-trip locally; [the verification record](docs/VERIFICATION.md) records the red and green runs. Live delivery and host error reporting remain host integration work \[D\].
 
 \[X\] The two scenarios of record, the anonymized two-proof production witness, and the four application-contract scenarios replay the tracker portions with in-memory headers and synthetic proofs. The pending-wallet-call scenario tests only tracker inputs, not prompt cancellation or deadline enforcement. Host cache TTLs, ETags, counts, feed delivery, node behavior and beta integrations remain unverified \[D\]. Four property tests are named `mined_implies_checked_proof`, `reorg_reasks_at_or_above`, `hint_changes_no_chain_word`, and `same_evidence_same_word`. The last compares chain words, evidence and suspect marks; hint-tier words may differ, exactly as in Lean.
 

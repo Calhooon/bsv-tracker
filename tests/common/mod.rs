@@ -60,12 +60,42 @@ pub fn step(s: &mut State, h: &TestHeaders, i: Input) {
 pub fn hint(status: HintStatus, observed: u64) -> Input {
     Input::Hint(Hint::new("stub broadcaster", status, observed))
 }
+// Synthetic wire metadata; checked inclusion still uses TestHeaders and Proof.
+pub fn event_header(height: u32, block: u64) -> EventHeader {
+    EventHeader {
+        version: 1,
+        previous_hash: hash(block.saturating_sub(1)),
+        merkle_root: hash(block + 1_000),
+        time: 1_757_280_000 + height,
+        bits: 545_259_519,
+        nonce: 0,
+        height,
+        hash: hash(block),
+        chain_work: hash(u64::from(height) + 1),
+    }
+}
+pub fn tip(height: u32, block: u64) -> ChainEvent {
+    let header = event_header(height, block);
+    ChainEvent::Tip {
+        height,
+        hash: header.hash.clone(),
+        time: header.time,
+        header,
+    }
+}
+pub fn fork(height: u32) -> ChainEvent {
+    ChainEvent::Fork {
+        height,
+        competing_tips: [event_header(height, 90), event_header(height, 91)],
+        depth: 1,
+    }
+}
 pub fn reorg(height: u32) -> ChainEvent {
     ChainEvent::Reorg {
         fork_height: height,
         depth: 1,
-        deactivated: vec![hash(100)],
-        new_tip: hash(200),
+        deactivated_headers: vec![event_header(height, 100)],
+        new_tip: event_header(height + 1, 200),
     }
 }
 pub fn mined(s: &State, height: u32) {

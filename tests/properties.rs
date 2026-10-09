@@ -85,22 +85,21 @@ fn input(h: &mut TestHeaders, code: u8, height: u32, sibling: u64) -> Input {
             Evidence::Competitor(other)
         }
         6 => Evidence::Chain(reorg(height)),
-        7 => Evidence::Chain(ChainEvent::Fork {
-            height,
-            competing_tips: vec![hash(90), hash(91)],
-            depth: 1,
-        }),
-        8 => Evidence::Chain(ChainEvent::Tip {
-            height,
-            hash: hash(90),
-        }),
+        7 => Evidence::Chain(fork(height)),
+        8 => Evidence::Chain(tip(height, 90)),
         9 => Evidence::Chain(ChainEvent::Invalidated {
             block_hash: hash(u64::from(height)),
         }),
         10 => Evidence::Chain(ChainEvent::Frozen {
-            outpoint: format!("{}:0", hash(1)),
+            outpoint: Outpoint {
+                txid: hash(1),
+                vout: 0,
+            },
         }),
-        11 => Evidence::Chain(ChainEvent::TipAge { seconds: sibling }),
+        11 => Evidence::Chain(ChainEvent::TipAge {
+            seconds: sibling,
+            tip: event_header(height, 90),
+        }),
         12 => Evidence::Verdict(NodeVerdict::Rejected {
             reason: format!("node-{height}"),
         }),

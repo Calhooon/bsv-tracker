@@ -23,7 +23,7 @@ fn mined_orphaned_remined_broadcaster_latch() {
         &h,
         Input::Evidence(Evidence::Chain(ChainEvent::Fork {
             height: 100,
-            competing_tips: vec![hash(100), hash(101)],
+            competing_tips: [event_header(100, 100), event_header(100, 101)],
             depth: 1,
         })),
     );
@@ -90,10 +90,8 @@ fn reorg_announced_nobody_hears_go_server_ts_client_shape() {
         })
     ));
     mined(&s, 100);
-    let event = decode_envelope(
-        br#"{"v":1,"kind":"reorg","forkHeight":100,"depth":1,"deactivated":[],"newTip":"new"}"#,
-    )
-    .unwrap();
+    let wire = serde_json::to_vec(&ChainEnvelope::new(reorg(100))).unwrap();
+    let event = decode_envelope(&wire).unwrap();
     step(&mut s, &h, Input::Evidence(Evidence::Chain(event)));
     assert_eq!(s.word(), &Word::Stale);
     step(&mut no_feed, &h, Input::Evidence(Evidence::Recheck));
@@ -149,7 +147,8 @@ fn contract_1_versioned_envelope_fails_loud() {
     h.insert(&p, 100);
     step(&mut s, &h, Input::Evidence(Evidence::Proof(p)));
     mined(&s, 100);
-    let tip = decode_envelope(br#"{"v":1,"kind":"tip","height":101,"hash":"tip"}"#).unwrap();
+    let wire = serde_json::to_vec(&ChainEnvelope::new(tip(101, 101))).unwrap();
+    let tip = decode_envelope(&wire).unwrap();
     step(&mut s, &h, Input::Evidence(Evidence::Chain(tip)));
     mined(&s, 100);
     let mut faults = vec![];
