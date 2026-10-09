@@ -14,7 +14,7 @@ default = []
 wasm = ["bsv-rs/wasm"]
 
 [dependencies]
-bsv-rs = { version = "0.3.35", default-features = false, features = ["transaction"] }
+bsv-rs = { version = "0.4.1", default-features = false, features = ["transaction"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
