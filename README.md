@@ -97,4 +97,4 @@ cargo build --target wasm32-unknown-unknown --features wasm
 RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps
 ```
 
-This crate is licensed under MIT OR Apache-2.0. Version 0.1.0 is an unpublished new API, with no existing stored-state migration or deployed rollback. Adoption is opt-in by each host; stored proofs must be checked on a named read or event. Reverting adoption restores that host's previous adapter, a host-lane rollback \[D\]. No CI is configured.
+This crate is licensed under MIT OR Apache-2.0. Version 0.1.0 is a new API, with no existing stored-state migration or deployed rollback. Adoption is opt-in by each host; stored proofs must be checked on a named read or event. Reverting adoption restores that host's previous adapter, a host-lane rollback \[D\]. CI runs the five checks (`test`, `fmt`, `clippy`, `vectors`, `wasm32`) on every pull request; a `v*` tag publishes through crates.io trusted publishing (`RELEASING.md`).

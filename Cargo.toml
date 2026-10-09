@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "A transaction evidence state machine with host supplied headers, proofs, hints and time"
+repository = "https://github.com/Calhooon/bsv-tracker"
 
 [lib]
 name = "bsv_tracker"
