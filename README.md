@@ -1,6 +1,6 @@
 # bsv-tracker
 
-**0.2.2**, a transaction evidence state machine on **bsv-rs =0.5.0**.
+**0.2.3**, a transaction evidence state machine on **bsv-rs ^0.5.0**.
 The tracker owns re-asking: per transaction it keeps a word, the evidence
 behind it, the hints received and the next re-ask. Checked headers and proofs
 establish mining and conflicts; broadcaster words only supply hints. A reorg
@@ -12,7 +12,7 @@ without giving this crate a network client or a periodic chain scan.
 
 ```toml
 [dependencies]
-bsv-tracker = "=0.2.2"
+bsv-tracker = "=0.2.3"
 ```
 
 Enable the `wasm` feature for a wasm host. [Cargo.toml](Cargo.toml) disables
