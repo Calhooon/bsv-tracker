@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.1] - 2026-10-12
+
+bsv-rs 0.4.5 (the lone leaf at offset 0 only; the LOCAL work bound inside one input's script); no behavior change under the defaults. The L2 re-pin of bsv-stack-lean item 2.
+
 ## Unreleased
 
 - bsv-rs 0.4.5: the lone leaf at offset 0 only; the LOCAL work bound; no behavior change under the defaults. Pin exactly to `=0.4.5` and update the lock.
