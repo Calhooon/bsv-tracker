@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.3] - 2026-10-12
+
+- Declare `bsv-rs = "0.5.0"` by caret in the published libraries. The update loop can deliver compatible SDK patches to consumers without another library release; deployables keep their exact pins and committed locks.
+
 ## [0.2.2] - 2026-10-12
 
 - Pin bsv-rs exactly to `=0.5.0` and re-lock the committed Cargo.lock; tracker types, transitions, wire formats and dependency features stay unchanged. Hosts passing SDK MerklePath values must use bsv-rs 0.5.
