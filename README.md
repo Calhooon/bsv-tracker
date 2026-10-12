@@ -45,7 +45,7 @@ the active header chain or run a script evaluator on the host's behalf.
 [docs/CHAIN-EVENTS.md](docs/CHAIN-EVENTS.md) defines the event envelope.
 Unknown envelope versions, kinds or shapes are errors, not silent tracker
 inputs. [docs/VERIFICATION.md](docs/VERIFICATION.md) records scoped witnesses;
-[tests](tests) contains chain-event vectors and transition tests.
+[tests](./tests) contains chain-event vectors and transition tests.
 Host integration and live transport behavior require their own evidence.
 
 ## Build and gate
