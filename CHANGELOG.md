@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+The lint bar (bsv-stack-lean #134, #135, #137, #139, #140, #145); no behavior change.
+
+- `[lints]` table: clippy pedantic as warnings (blocking under the gate's `-D warnings`), `unwrap_used`, `expect_used` and `panic` denied, `unsafe_code` forbidden, `missing_docs` denied. Every public field and variant is documented and every fallible item names its errors.
+- `#[must_use]` on 27 accessors and constructors: a caller that drops one of their values now gets a warning.
+- `rust-version = "1.88"` declared (bsv-rs 0.6.0 needs `slice::as_chunks`).
+- Gate jobs: `msrv` (check at 1.88), `machete` (unused dependencies, non-blocking), `secrets` (gitleaks 8.28.0) and `actionlint` (1.7.12), the two tools built from source tarballs pinned by sha256.
+
 ## [0.3.0] - 2026-10-15
 
 - bsv-rs 0.6.0 by caret: the one home of the chain primitives (bsv-rs types sit in the public API, so 0.3.0). The stack's template `deny.toml` adopted byte for byte.
