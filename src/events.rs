@@ -10,14 +10,23 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EventHeader {
+    /// The block version.
     pub version: u32,
+    /// The display order hash of the parent block.
     pub previous_hash: Hash,
+    /// The display order merkle root the header commits to.
     pub merkle_root: Hash,
+    /// The block timestamp, in seconds.
     pub time: u32,
+    /// The compact difficulty target.
     pub bits: u32,
+    /// The proof of work nonce.
     pub nonce: u32,
+    /// The block's height on the emitter's chain.
     pub height: Height,
+    /// The display order hash of this header.
     pub hash: Hash,
+    /// The cumulative chain work at this header, as the emitter's string.
     pub chain_work: String,
 }
 
@@ -26,7 +35,9 @@ pub struct EventHeader {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Outpoint {
+    /// The display order txid of the transaction that created the output.
     pub txid: Hash,
+    /// The output index within that transaction.
     pub vout: u32,
 }
 
@@ -37,30 +48,52 @@ pub struct Outpoint {
 pub enum ChainEvent {
     /// A new active tip. Only suspect transactions need a recheck.
     Tip {
+        /// The new tip's height.
         height: Height,
+        /// The new tip's display order hash.
         hash: Hash,
+        /// The new tip's block timestamp, in seconds.
         time: u32,
+        /// The new tip's header.
         header: EventHeader,
     },
     /// A fork that has not resolved.
     Fork {
+        /// The height at which the two branches diverge.
         height: Height,
+        /// The tips of the two competing branches.
         competing_tips: [EventHeader; 2],
+        /// The fork's depth, in blocks, as the emitter reports it.
         depth: u32,
     },
     /// Blocks at or above a fork point have been replaced.
     Reorg {
+        /// The lowest height whose block was replaced.
         fork_height: Height,
+        /// The reorg's depth, in blocks, as the emitter reports it.
         depth: u32,
+        /// The headers that left the active chain.
         deactivated_headers: Vec<EventHeader>,
+        /// The active tip after the reorg.
         new_tip: EventHeader,
     },
     /// The alert system invalidated a block.
-    Invalidated { block_hash: Hash },
+    Invalidated {
+        /// The display order hash of the invalidated block.
+        block_hash: Hash,
+    },
     /// A frozen output. The wallet owns its meaning; it moves no tracker word.
-    Frozen { outpoint: Outpoint },
+    Frozen {
+        /// The frozen output.
+        outpoint: Outpoint,
+    },
     /// Tip age. The header snapshot implements the fail closed response.
-    TipAge { seconds: u64, tip: EventHeader },
+    TipAge {
+        /// The tip's age, in seconds, as the emitter measured it.
+        seconds: u64,
+        /// The tip whose age is reported.
+        tip: EventHeader,
+    },
 }
 
 // Remote serde derives keep the unversioned body private. Both public decode
@@ -170,7 +203,9 @@ impl<'de> Deserialize<'de> for ChainEnvelope {
 pub enum DecodeError {
     /// A missing, malformed or unrecognized body.
     UnknownShape {
+        /// The envelope's version, when it was read before the fault.
         version: Option<u64>,
+        /// What was wrong with the body.
         detail: String,
     },
     /// The sender uses a version this client does not know.

@@ -28,14 +28,29 @@ impl Mined {
 /// The nine words. `Mined` needs an unforgeable checked proof.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Word {
+    /// Tracked, with no claim from any tier.
     Unknown,
+    /// The host built the transaction.
     Built,
+    /// A broadcaster accepted the transaction.
     Announced,
+    /// A broadcaster reports the transaction seen on the network.
     Seen,
+    /// Included, backed by a checked proof against the active headers.
     Mined(Mined),
+    /// Was mined in a block that left the active chain.
     Stale,
-    Rejected { reason: String },
-    Conflicted { competitors: Vec<TxId> },
+    /// The host's trusted node rejected the transaction.
+    Rejected {
+        /// The node's reason.
+        reason: String,
+    },
+    /// A competing transaction is mined or named by the host's trusted node.
+    Conflicted {
+        /// The competing txids, the most recent at the front.
+        competitors: Vec<TxId>,
+    },
+    /// The host abandoned the transaction before any broadcaster accepted it.
     Abandoned,
 }
 impl Word {
@@ -62,47 +77,85 @@ impl Word {
 /// A verdict explicitly supplied by the host's trusted node, never a broadcaster.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NodeVerdict {
-    Rejected { reason: String },
-    Conflicted { competitors: Vec<TxId> },
+    /// The node rejected the transaction.
+    Rejected {
+        /// The node's reason.
+        reason: String,
+    },
+    /// The node names competing transactions.
+    Conflicted {
+        /// The competing txids the node names.
+        competitors: Vec<TxId>,
+    },
 }
 /// The inputs that may write a chain word.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Evidence {
+    /// A proof of this transaction's inclusion.
     Proof(Proof),
+    /// A proof of a competing transaction's inclusion.
     Competitor(Proof),
+    /// A chain event from the host's header feed.
     Chain(ChainEvent),
+    /// A verdict from the host's trusted node.
     Verdict(NodeVerdict),
+    /// Recheck a mined word against the current headers.
     Recheck,
 }
 /// Acts supplied by the host, including its clock and spend guard.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HostAction {
+    /// The host built the transaction.
     Build,
+    /// The host abandons the transaction.
     Abandon,
+    /// The host is about to spend an output of the transaction.
     SpendAttempt,
+    /// The host's clock reads this time.
     Tick(Timestamp),
 }
 /// One input to `Tracker.step`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Input {
+    /// Evidence that may write a chain word.
     Evidence(Evidence),
+    /// A broadcaster's hint, which never writes a chain word.
     Hint(Hint),
+    /// An act of the host.
     Host(HostAction),
 }
 /// A value for the host to execute; the crate never fetches anything.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Reask {
-    Reorg { fork_height: Height },
-    Fork { height: Height },
+    /// The mined word went stale; fetch a fresh proof.
+    Reorg {
+        /// The lowest replaced height, or the mined height when its block was
+        /// invalidated or its root no longer matches the active header.
+        fork_height: Height,
+    },
+    /// A fork at or below the mined height; the word is suspect.
+    Fork {
+        /// The height at which the branches diverge.
+        height: Height,
+    },
+    /// A hint that disagrees with the word; reconcile it.
     Hint(Hint),
-    ProofFailed { height: Height },
+    /// A proof or competitor proof failed its check.
+    ProofFailed {
+        /// The height the failed proof named.
+        height: Height,
+    },
+    /// Recheck the mined word against the current headers.
     Recheck,
+    /// The last hint is older than the age threshold.
     Age,
+    /// The host is about to spend; recheck before it does.
     Spend,
 }
 /// Host selected scheduling parameters.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Params {
+    /// Seconds after the last hint before an announced or seen word is re-asked.
     pub age_threshold: Timestamp,
 }
 /// The complete private state of one transaction.

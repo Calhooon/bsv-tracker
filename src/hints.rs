@@ -5,20 +5,40 @@ use std::fmt;
 /// A broadcaster's claim reduced to the Lean hint vocabulary.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HintStatus {
+    /// The broadcaster accepted the transaction.
     Accepted,
+    /// The broadcaster reports the transaction seen on the network.
     Seen,
-    Mined { height: Height },
+    /// The broadcaster claims a block at a height; never inclusion evidence.
+    Mined {
+        /// The height the broadcaster names.
+        height: Height,
+    },
+    /// The broadcaster reports the transaction mined in a block that went stale.
     StaleBlock,
-    Rejected { reason: String },
-    DoubleSpend { competitors: Vec<TxId> },
+    /// The broadcaster reports a rejection.
+    Rejected {
+        /// The broadcaster's reason, or its status word when it gave none.
+        reason: String,
+    },
+    /// The broadcaster reports a double spend.
+    DoubleSpend {
+        /// The competing txids the broadcaster names.
+        competitors: Vec<TxId>,
+    },
+    /// The broadcaster reports the transaction in its orphan mempool.
     OrphanMempool,
+    /// A status the vocabulary does not reduce to any other hint.
     Unknown,
 }
 /// An observed hint, carrying its source and host supplied time.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hint {
+    /// The host's name for the broadcaster or feed that supplied the hint.
     pub source: String,
+    /// The claim, in the Lean hint vocabulary.
     pub status: HintStatus,
+    /// When the host observed the hint, on its own clock.
     pub observed: Timestamp,
     /// The original broadcaster metadata, when reduced through `Verdict`.
     /// This retains the raw status, reason and named competitors for re-asks.
@@ -38,9 +58,13 @@ impl Hint {
 /// Raw broadcaster metadata. HTTP acceptance is not chain evidence.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Verdict {
+    /// The raw `txStatus` word, as the body spelled it.
     pub status: String,
+    /// The raw `blockHeight`, when present.
     pub height: Option<Height>,
+    /// The raw `extraInfo`, when present.
     pub reason: Option<String>,
+    /// The `competingTxs`, lowercased and checked for shape and uniqueness.
     pub competitors: Vec<TxId>,
 }
 impl Verdict {
