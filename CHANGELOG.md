@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.0] - 2026-10-15
+
+- bsv-rs 0.6.0 by caret: the one home of the chain primitives (bsv-rs types sit in the public API, so 0.3.0). The stack's template `deny.toml` adopted byte for byte.
+
 ## [0.2.3] - 2026-10-12
 
 - Declare `bsv-rs = "0.5.0"` by caret in the published libraries. The update loop can deliver compatible SDK patches to consumers without another library release; deployables keep their exact pins and committed locks.
