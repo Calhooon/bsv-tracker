@@ -3,6 +3,8 @@ name: ci
 # The machine gate. The job ids below are the status-check contexts that branch
 # protection on main requires (test, fmt, clippy, vectors, wasm32); renaming a
 # job removes its context and blocks every PR until the protection is updated.
+# The lint bar's jobs (msrv, machete, secrets, actionlint) are not required
+# contexts until the keeper adds them; machete stays non-blocking.
 # Every action is pinned by commit sha; the tag it was read at is in the comment.
 on:
   pull_request:
@@ -238,3 +240,23 @@ jobs:
 
       - name: Scan the history
         run: '"$RUNNER_TEMP/tools/gitleaks" git --redact --no-banner --exit-code 1 .'
+
+  # The workflows linted (bsv-stack-lean #145). actionlint 1.7.12 is built
+  # from its release source, pinned by the tarball's sha256 (the Homebrew
+  # formula's pin of 1.7.12); it runs shellcheck on every run step.
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install actionlint 1.7.12
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/actionlint.tar.gz" \
+            https://github.com/rhysd/actionlint/archive/refs/tags/v1.7.12.tar.gz
+          echo "454800bd4f854592bcfe79b161f71d56e35940eb7016e48a26dd356adc9d400a  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/actionlint-1.7.12"
+          go build -o "$RUNNER_TEMP/tools/actionlint" ./cmd/actionlint
+
+      - name: Lint the workflows
+        run: '"$RUNNER_TEMP/tools/actionlint" -color'
