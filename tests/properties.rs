@@ -203,7 +203,8 @@ fn reorg_reasks_at_or_above() {
                 let after = tracker.get(old.txid()).unwrap();
                 if old.word().height().is_some_and(|h| h >= fork_height) {
                     prop_assert_eq!(after.word(), &Word::Stale);
-                    prop_assert_eq!(after.reask(), Some(&Reask::Reorg { fork_height }));
+                    let reorg = Reask::Reorg { fork_height };
+                    prop_assert_eq!(after.reask(), Some(&reorg));
                     prop_assert_eq!(after.evidence(), old.evidence());
                     prop_assert!(!after.suspect());
                     prop_assert!(affected

@@ -164,6 +164,40 @@ jobs:
       - name: Build for wasm32-unknown-unknown
         run: cargo build --locked --target wasm32-unknown-unknown --features wasm
 
+  # The declared rust-version builds (bsv-stack-lean #139). Keep the toolchain
+  # equal to rust-version in Cargo.toml; a move of one moves the other.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: "1.88"
+
+      - name: Cache cargo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ubuntu-msrv-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ubuntu-msrv-
+
+      - name: The declared rust-version is the toolchain
+        run: |
+          declared=$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[0].rust_version')
+          if [ "$declared" != "1.88" ]; then
+            echo "::error::rust-version $declared differs from the msrv job's toolchain 1.88"
+            exit 1
+          fi
+
+      - name: Check at the MSRV
+        run: cargo check --locked --all-targets
+
   # Unused dependencies (bsv-stack-lean #137). Non-blocking until the keeper
   # makes it a required check; the tool is pinned by version and its lock.
   machete:
