@@ -1,6 +1,14 @@
 //! Wire witnesses from rust-chaintracks@a62f9ed docs/CHAIN-EVENTS.md:265-285.
 //! JSON field order is not a schema rule. The two short examples also match
 //! byte for byte; the four header-bearing examples use JSON value equality.
+// The lint bar binds the library; a test may unwrap, and its fixtures fail loudly
+// (bsv-stack-lean #134).
+#![allow(
+    clippy::pedantic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic
+)]
 mod common;
 use bsv_tracker::*;
 use common::*;

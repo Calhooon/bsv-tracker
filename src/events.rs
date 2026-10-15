@@ -138,18 +138,22 @@ pub struct ChainEnvelope {
 
 impl ChainEnvelope {
     /// Wrap an event in the supported version.
+    #[must_use]
     pub fn new(event: ChainEvent) -> Self {
         Self { v: 1, event }
     }
     /// The validated wire version.
+    #[must_use]
     pub fn version(&self) -> u64 {
         self.v
     }
     /// The decoded event.
+    #[must_use]
     pub fn event(&self) -> &ChainEvent {
         &self.event
     }
     /// Consume the envelope to deliver its decoded event.
+    #[must_use]
     pub fn into_event(self) -> ChainEvent {
         self.event
     }
@@ -183,6 +187,14 @@ impl std::error::Error for DecodeError {}
 
 /// Pure decoding, with the version gated before the shape, independent of JSON
 /// key order. Unknown fields, kinds and versions are reported errors.
+///
+/// # Errors
+///
+/// [`DecodeError::UnknownVersion`] when `v` is a number other than 1,
+/// [`DecodeError::UnknownKind`] for an event kind this client does not know,
+/// and [`DecodeError::UnknownShape`] for bytes that are not JSON, a missing or
+/// malformed `v` or `kind`, an unknown field, or fields that are inconsistent
+/// with each other.
 pub fn decode_envelope(bytes: &[u8]) -> Result<ChainEvent, DecodeError> {
     let value: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|e| DecodeError::UnknownShape {
@@ -203,10 +215,10 @@ fn decode_value(mut value: serde_json::Value) -> Result<ChainEvent, DecodeError>
     if v != 1 {
         return Err(DecodeError::UnknownVersion(v));
     }
-    value
-        .as_object_mut()
-        .expect("v was read from an object")
-        .remove("v");
+    // `v` was read through `get`, so the value is an object.
+    if let Some(object) = value.as_object_mut() {
+        object.remove("v");
+    }
     let kind = value
         .get("kind")
         .and_then(serde_json::Value::as_str)
@@ -288,7 +300,7 @@ fn valid_event(event: &ChainEvent) -> bool {
 }
 
 fn valid_header(header: &EventHeader) -> bool {
-    header.height <= i32::MAX as u32
+    i32::try_from(header.height).is_ok()
         && valid_hash(&header.hash)
         && valid_hash(&header.previous_hash)
         && valid_hash(&header.merkle_root)

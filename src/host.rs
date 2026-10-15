@@ -6,6 +6,10 @@ pub trait ProofFetcher {
     type Error;
     /// Execute a scheduled re-ask, with no proof represented explicitly.
     /// Competitor hints name the txids the host must also reconcile.
+    ///
+    /// # Errors
+    ///
+    /// The transport's own error, for the host to handle.
     fn fetch(&mut self, txid: &str, reask: &Reask) -> Result<Option<Proof>, Self::Error>;
 }
 
@@ -14,6 +18,10 @@ pub trait HintSource {
     /// The source's own error type.
     type Error;
     /// Supply the next named observation, or none. The tracker owns no loop.
+    ///
+    /// # Errors
+    ///
+    /// The source's own error, for the host to handle.
     fn next_hint(&mut self) -> Result<Option<(TxId, Hint)>, Self::Error>;
 }
 

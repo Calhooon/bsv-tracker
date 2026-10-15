@@ -1,4 +1,12 @@
 //! The bytes of the P0-2 vector at bsv-rs@7bc623c are fixtures, never live calls.
+// The lint bar binds the library; a test may unwrap, and its fixtures fail loudly
+// (bsv-stack-lean #134).
+#![allow(
+    clippy::pedantic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic
+)]
 mod common;
 use bsv_tracker::*;
 use common::*;

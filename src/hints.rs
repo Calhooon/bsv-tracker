@@ -46,6 +46,14 @@ pub struct Verdict {
 impl Verdict {
     /// Read an ARC body as metadata, checking its echoed txid and the bounded
     /// status vocabulary at bsv-rs@7bc623c. HTTP status is never consulted.
+    ///
+    /// # Errors
+    ///
+    /// [`VerdictError::Shape`] when the body does not decode,
+    /// [`VerdictError::TxidMismatch`] when it echoes another or a malformed
+    /// txid, [`VerdictError::InvalidMetadata`] when its text or competitors
+    /// break the bounds, and [`VerdictError::UnknownStatus`] for a status word
+    /// outside the vocabulary.
     pub fn from_arc_body(expected_txid: &str, bytes: &[u8]) -> Result<Self, VerdictError> {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
