@@ -62,6 +62,11 @@ impl Eq for Proof {}
 
 impl Proof {
     /// Bind the path to its txid, revalidating public SDK fields before reduction.
+    ///
+    /// # Errors
+    ///
+    /// [`CheckError::InvalidProof`] when the txid is not 32 bytes of hex, the
+    /// path fails bsv-rs's validation, or the path does not reduce for the txid.
     pub fn new(txid: impl Into<TxId>, path: MerklePath) -> Result<Self, CheckError> {
         let txid = txid.into().to_ascii_lowercase();
         if txid.len() != 64 || !txid.bytes().all(|c| c.is_ascii_hexdigit()) {
@@ -76,18 +81,25 @@ impl Proof {
         Ok(Self { txid, path })
     }
     /// The transaction whose inclusion is being checked.
+    #[must_use]
     pub fn txid(&self) -> &str {
         &self.txid
     }
     /// The height named by the path.
+    #[must_use]
     pub fn height(&self) -> Height {
         self.path.block_height
     }
     /// The SDK path, borrowed without allowing mutation.
+    #[must_use]
     pub fn path(&self) -> &MerklePath {
         &self.path
     }
     /// Compute the root for the bound txid through bsv-rs.
+    ///
+    /// # Errors
+    ///
+    /// [`CheckError::InvalidProof`] when bsv-rs cannot reduce the path.
     pub fn root(&self) -> Result<Hash, CheckError> {
         self.path
             .compute_root(Some(&self.txid))
@@ -120,22 +132,27 @@ pub struct CheckedProof {
 }
 impl CheckedProof {
     /// The path whose root was checked.
+    #[must_use]
     pub fn proof(&self) -> &Proof {
         &self.proof
     }
     /// The active header used at the moment of the check.
+    #[must_use]
     pub fn header(&self) -> &Header {
         &self.header
     }
     /// The computed root, equal to the retained header's root.
+    #[must_use]
     pub fn root(&self) -> &str {
         &self.root
     }
     /// The proof's height.
+    #[must_use]
     pub fn height(&self) -> Height {
         self.proof.height()
     }
     /// Confirmations at the snapshot that checked this proof.
+    #[must_use]
     pub fn depth(&self) -> u64 {
         self.depth
     }
@@ -145,12 +162,28 @@ impl CheckedProof {
 /// must answer from the same snapshot and fail closed when it is unavailable.
 pub trait Headers {
     /// Look up an active header, or no answer while behind or unverified.
+    ///
+    /// # Errors
+    ///
+    /// A [`HeaderError`] when the host cannot answer from a fresh verified
+    /// active chain.
     fn header_at(&self, height: Height) -> Result<Option<Header>, HeaderError>;
     /// The active height from the same snapshot.
+    ///
+    /// # Errors
+    ///
+    /// A [`HeaderError`] when the snapshot is unavailable.
     fn tip_height(&self) -> Result<Height, HeaderError>;
     /// Reduce a bound SDK proof and check it against the active header.
     /// Tracker transitions always invoke this default implementation through
     /// a snapshot wrapper, so host overrides cannot bypass current lookups.
+    ///
+    /// # Errors
+    ///
+    /// [`CheckError::InvalidProof`] when the path does not reduce,
+    /// [`CheckError::Headers`] when a lookup fails, [`CheckError::Unavailable`]
+    /// when the snapshot has no active header at the height or its tip is
+    /// below it, and [`CheckError::RootMismatch`] when the roots differ.
     fn check(&self, proof: Proof) -> Result<CheckedProof, CheckError> {
         let root = proof.root()?;
         let height = proof.height();

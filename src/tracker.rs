@@ -47,6 +47,7 @@ impl Index {
 
 impl Tracker {
     /// An empty host registry with explicit age parameters.
+    #[must_use]
     pub fn new(params: Params) -> Self {
         Self {
             params,
@@ -64,19 +65,26 @@ impl Tracker {
             .or_insert_with(|| State::new(txid))
     }
     /// An immutable state, or none when the host does not track this txid.
+    #[must_use]
     pub fn get(&self, txid: &str) -> Option<&State> {
         self.states.get(&txid.to_ascii_lowercase())
     }
     /// Number of transactions this host tracks.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.states.len()
     }
     /// Whether the registry is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.states.is_empty()
     }
     /// Apply an input to one transaction and maintain the event indexes,
     /// including after a failed proof or header lookup.
+    ///
+    /// # Errors
+    ///
+    /// The [`CheckError`] of [`State::step`] for that transaction.
     pub fn apply<H: Headers + ?Sized>(
         &mut self,
         txid: &str,
@@ -120,6 +128,8 @@ impl Tracker {
     }
     /// Deliver an evidence event only to the set it names. The output contains
     /// every selected txid and each fault for the host to report.
+    // By reference would break the public API; a later minor (bsv-stack-lean #134).
+    #[allow(clippy::needless_pass_by_value)]
     pub fn on_chain<H: Headers + ?Sized>(
         &mut self,
         headers: &H,

@@ -1,6 +1,14 @@
 //! Four randomized statements named for the Lean theorems they exercise.
 //! 256 reproducible traces per theorem, using an explicit ChaCha seed and no
 //! failure persistence, network, clock or storage.
+// The lint bar binds the library; a test may unwrap, and its fixtures fail loudly
+// (bsv-stack-lean #134).
+#![allow(
+    clippy::pedantic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic
+)]
 mod common;
 use bsv_tracker::*;
 use common::*;

@@ -1,5 +1,13 @@
 //! Local tracker projections of the seven corpus witnesses at stack pin f95520f.
 //! Actual wallet calls, caches and feed delivery are integration lane work.
+// The lint bar binds the library; a test may unwrap, and its fixtures fail loudly
+// (bsv-stack-lean #134).
+#![allow(
+    clippy::pedantic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic
+)]
 mod common;
 use bsv_tracker::*;
 use common::*;

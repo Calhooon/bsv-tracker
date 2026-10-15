@@ -15,10 +15,12 @@ pub struct Mined {
 }
 impl Mined {
     /// The height of the checked proof. It cannot differ from the evidence.
+    #[must_use]
     pub fn height(&self) -> Height {
         self.checked.height()
     }
     /// The checked capability behind the word.
+    #[must_use]
     pub fn checked(&self) -> &CheckedProof {
         &self.checked
     }
@@ -38,6 +40,7 @@ pub enum Word {
 }
 impl Word {
     /// `Tracker.Word.chain`, ignoring the host and hint tiers.
+    #[must_use]
     pub fn chain(&self) -> Option<&Self> {
         match self {
             Self::Mined(_) | Self::Stale | Self::Rejected { .. } | Self::Conflicted { .. } => {
@@ -47,6 +50,7 @@ impl Word {
         }
     }
     /// A height only when this is an evidenced mined word.
+    #[must_use]
     pub fn height(&self) -> Option<Height> {
         if let Self::Mined(m) = self {
             Some(m.height())
@@ -126,35 +130,47 @@ impl State {
         }
     }
     /// The host's tracked transaction.
+    #[must_use]
     pub fn txid(&self) -> &str {
         &self.txid
     }
     /// The current word. It is immutable outside the transition function.
+    #[must_use]
     pub fn word(&self) -> &Word {
         &self.word
     }
     /// The retained record, including when the word has become stale.
+    #[must_use]
     pub fn evidence(&self) -> Option<&CheckedProof> {
         self.evidence.as_deref()
     }
     /// Whether an unresolved fork requires a header recheck before acting.
+    #[must_use]
     pub fn suspect(&self) -> bool {
         self.suspect
     }
     /// Observations in newest received order, matching the Lean list.
+    #[must_use]
     pub fn hints(&self) -> &[Hint] {
         &self.hints
     }
     /// Time of the most recently received hint, even for out of order clocks.
+    #[must_use]
     pub fn last_hint_at(&self) -> Option<Timestamp> {
         self.last_hint_at
     }
     /// The next re-ask, which the host must execute and feed back.
+    #[must_use]
     pub fn reask(&self) -> Option<&Reask> {
         self.reask.as_ref()
     }
     /// Execute one Lean transition. Proof and header failures retain the word
     /// and record the re-ask before returning an error to the host.
+    ///
+    /// # Errors
+    ///
+    /// The [`CheckError`] of a proof, competitor, chain event or recheck whose
+    /// check fails; the word is kept and the re-ask recorded.
     pub fn step<H: Headers + ?Sized>(
         &mut self,
         params: &Params,
@@ -163,7 +179,7 @@ impl State {
     ) -> Result<(), CheckError> {
         match input {
             Input::Hint(hint) => self.on_hint(hint),
-            Input::Host(action) => self.on_host(params, action),
+            Input::Host(action) => self.on_host(params, &action),
             Input::Evidence(Evidence::Proof(proof)) => self.on_proof(headers, proof)?,
             Input::Evidence(Evidence::Competitor(proof)) => self.on_competitor(headers, proof)?,
             Input::Evidence(Evidence::Chain(event)) => self.on_chain(headers, &event)?,
@@ -186,11 +202,11 @@ impl State {
         self.hints.insert(0, hint);
     }
 
-    fn on_host(&mut self, params: &Params, action: HostAction) {
-        match action {
+    fn on_host(&mut self, params: &Params, action: &HostAction) {
+        match *action {
             HostAction::Build if self.word == Word::Unknown => self.word = Word::Built,
             HostAction::Abandon if matches!(self.word, Word::Unknown | Word::Built) => {
-                self.word = Word::Abandoned
+                self.word = Word::Abandoned;
             }
             HostAction::SpendAttempt => self.reask = Some(Reask::Spend),
             // Lean adds unbounded naturals. Checked addition keeps an
@@ -307,7 +323,7 @@ impl State {
             ChainEvent::Reorg { fork_height, .. }
                 if self.word.height().is_some_and(|h| *fork_height <= h) =>
             {
-                self.stale(*fork_height)
+                self.stale(*fork_height);
             }
             ChainEvent::Invalidated { block_hash } => {
                 if let Word::Mined(mined) = &self.word {
