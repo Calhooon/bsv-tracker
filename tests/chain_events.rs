@@ -1,6 +1,9 @@
-//! Wire witnesses from rust-chaintracks@a62f9ed docs/CHAIN-EVENTS.md:265-285.
-//! JSON field order is not a schema rule. The two short examples also match
-//! byte for byte; the four header-bearing examples use JSON value equality.
+//! Wire witnesses from rust-chaintracks@a62f9ed docs/CHAIN-EVENTS.md:265-285,
+//! and the two version-2 split kinds in the shape of chaintracks-cloudflare@v0.4.1
+//! docs/SPLITS.md:75-83 and migrations/0010_rung_tips.sql (key order).
+//! JSON field order is not a schema rule. The short examples and both split
+//! kinds also match byte for byte; the four header-bearing examples use JSON
+//! value equality.
 // The lint bar binds the library; a test may unwrap, and its fixtures fail loudly
 // (bsv-stack-lean #134).
 #![allow(
@@ -20,7 +23,9 @@ fn round_trip(wire: &str, byte_equal: bool) {
     let direct: ChainEvent = serde_json::from_str(wire).expect("ChainEvent serde must gate v:1");
     assert_eq!(direct, event);
     let envelope: ChainEnvelope = serde_json::from_str(wire).expect("typed envelope must decode");
-    assert_eq!(envelope.version(), 1);
+    let wire_version = serde_json::from_str::<Value>(wire).unwrap()["v"].as_u64();
+    assert_eq!(Some(envelope.version()), wire_version);
+    assert_eq!(envelope.version(), event.version());
     assert_eq!(envelope.event(), &event);
     let encoded = serde_json::to_string(&envelope).unwrap();
     assert_eq!(serde_json::to_string(&event).unwrap(), encoded);
@@ -67,6 +72,19 @@ fn pinned_tip_age_round_trip() {
 }
 
 #[test]
+fn pinned_split_round_trip() {
+    round_trip(include_str!("vectors/chain_events/split.json"), true);
+}
+
+#[test]
+fn pinned_split_resolved_round_trip() {
+    round_trip(
+        include_str!("vectors/chain_events/split_resolved.json"),
+        true,
+    );
+}
+
+#[test]
 fn future_kind_and_version_are_typed_host_faults() {
     // A host reports the Err and delivers no event. The version gate precedes
     // even an unknown kind or a malformed known-version body, in either order.
@@ -75,10 +93,33 @@ fn future_kind_and_version_are_typed_host_faults() {
             r#"{"v":1,"kind":"futureKind"}"#,
             DecodeError::UnknownKind("futureKind".into()),
         ),
-        (r#"{"kind":"tip","v":2}"#, DecodeError::UnknownVersion(2)),
+        (r#"{"kind":"tip","v":3}"#, DecodeError::UnknownVersion(3)),
+        (
+            r#"{"v":3,"kind":"futureKind"}"#,
+            DecodeError::UnknownVersion(3),
+        ),
+        (r#"{"kind":"split","v":3}"#, DecodeError::UnknownVersion(3)),
+        (r#"{"v":0,"kind":"tip"}"#, DecodeError::UnknownVersion(0)),
+        // Each version carries only its own kinds, whatever the body.
         (
             r#"{"v":2,"kind":"futureKind"}"#,
-            DecodeError::UnknownVersion(2),
+            DecodeError::UnknownKind("futureKind".into()),
+        ),
+        (
+            r#"{"kind":"tip","v":2}"#,
+            DecodeError::UnknownKind("tip".into()),
+        ),
+        (
+            r#"{"v":2,"kind":"invalidated","blockHash":"00"}"#,
+            DecodeError::UnknownKind("invalidated".into()),
+        ),
+        (
+            r#"{"v":1,"kind":"split"}"#,
+            DecodeError::UnknownKind("split".into()),
+        ),
+        (
+            r#"{"v":1,"kind":"splitResolved","key":"split:00","forkHeight":1}"#,
+            DecodeError::UnknownKind("splitResolved".into()),
         ),
     ] {
         assert_eq!(decode_envelope(wire.as_bytes()), Err(expected.clone()));
@@ -281,4 +322,110 @@ fn pinned_tip_header_cannot_bypass_the_checked_snapshot() {
     mined(tracker.get(&txid).unwrap(), 101);
     assert!(tracker.get(&txid).unwrap().suspect());
     assert_eq!(tracker.get(&txid).unwrap().evidence(), saved.as_ref());
+}
+
+#[test]
+fn version_one_kinds_under_version_two_are_refused_with_valid_bodies() {
+    for name in ["tip", "fork", "reorg", "invalidated", "frozen", "tip_age"] {
+        let wire = std::fs::read_to_string(format!(
+            "{}/tests/vectors/chain_events/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let mut value: Value = serde_json::from_str(&wire).unwrap();
+        let kind = value["kind"].as_str().unwrap().to_owned();
+        value["v"] = json!(2);
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert_eq!(decode_envelope(&bytes), Err(DecodeError::UnknownKind(kind)));
+    }
+    for name in ["split", "split_resolved"] {
+        let wire = std::fs::read_to_string(format!(
+            "{}/tests/vectors/chain_events/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let mut value: Value = serde_json::from_str(&wire).unwrap();
+        let kind = value["kind"].as_str().unwrap().to_owned();
+        value["v"] = json!(1);
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert_eq!(decode_envelope(&bytes), Err(DecodeError::UnknownKind(kind)));
+    }
+}
+
+#[test]
+fn split_shapes_mirror_the_emitter_relationship_checks() {
+    // chaintracks-cloudflare@v0.4.1 src/events.rs:157-161,210-232.
+    let split: Value =
+        serde_json::from_str(include_str!("vectors/chain_events/split.json")).unwrap();
+    let resolved: Value =
+        serde_json::from_str(include_str!("vectors/chain_events/split_resolved.json")).unwrap();
+    let mut cases: Vec<Value> = vec![];
+    let mut with = |base: &Value, change: &dyn Fn(&mut Value)| {
+        let mut value = base.clone();
+        change(&mut value);
+        cases.push(value);
+    };
+    for base in [&split, &resolved] {
+        with(base, &|v| v["key"] = json!(hash(1)));
+        with(base, &|v| v["key"] = json!(format!("fork:{}", hash(1))));
+        with(base, &|v| v["key"] = json!("split:abc"));
+        with(base, &|v| {
+            v["key"] = json!(format!("split:{}", "z".repeat(64)))
+        });
+        with(base, &|v| v["forkHeight"] = json!(0));
+        with(base, &|v| v["forkHeight"] = json!(-1));
+        with(base, &|v| v["forkHeight"] = json!(u64::from(u32::MAX) + 1));
+        with(base, &|v| v["forkHeight"] = json!(i64::from(i32::MAX) + 1));
+        with(base, &|v| {
+            v.as_object_mut().unwrap().remove("forkHeight");
+        });
+        with(base, &|v| {
+            v.as_object_mut().unwrap().remove("key");
+        });
+        with(base, &|v| v["fork_height"] = json!(965_876));
+        with(base, &|v| v["cursor"] = json!("42"));
+    }
+    with(&resolved, &|v| v["tips"] = split["tips"].clone());
+    with(&split, &|v| {
+        v.as_object_mut().unwrap().remove("tips");
+    });
+    with(&split, &|v| {
+        v["tips"].as_array_mut().unwrap().pop();
+    });
+    with(&split, &|v| {
+        let first = v["tips"][0].clone();
+        v["tips"].as_array_mut().unwrap().push(first);
+    });
+    with(&split, &|v| {
+        v["tips"][1]["hash"] = v["tips"][0]["hash"].clone()
+    });
+    with(&split, &|v| v["tips"][1]["height"] = json!(965_875));
+    with(&split, &|v| {
+        v["tips"][0]["height"] = json!(i64::from(i32::MAX) + 1)
+    });
+    with(&split, &|v| v["tips"][0]["hash"] = json!("ab"));
+    with(&split, &|v| v["tips"][0]["chainWork"] = json!("c4"));
+    with(&split, &|v| v["tips"][0]["rungs"] = json!([]));
+    with(&split, &|v| {
+        v["tips"][0]["rungs"] = json!(["woc", "bitails"])
+    });
+    with(&split, &|v| v["tips"][0]["rungs"] = json!(["woc", "woc"]));
+    with(&split, &|v| v["tips"][0]["rungs"] = json!(["", "woc"]));
+    with(&split, &|v| {
+        v["tips"][1]["rungs"] = json!(["arcade", "woc"])
+    });
+    with(&split, &|v| {
+        v["tips"][0].as_object_mut().unwrap().remove("chainWork");
+    });
+    with(&split, &|v| {
+        v["tips"][0]["chain_work"] = v["tips"][0]["chainWork"].clone()
+    });
+    with(&split, &|v| v["tips"][0]["isActive"] = json!(true));
+    for case in &cases {
+        rejects_shape(case);
+    }
+    // The boundaries the emitter admits: a tip at the fork height itself.
+    let mut at_fork = split.clone();
+    at_fork["tips"][1]["height"] = json!(965_876);
+    assert!(decode_envelope(&serde_json::to_vec(&at_fork).unwrap()).is_ok());
 }

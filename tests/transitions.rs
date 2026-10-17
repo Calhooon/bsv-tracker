@@ -421,8 +421,8 @@ fn envelopes_round_trip_and_reject_every_unknown_shape() {
         assert!(serde_json::from_slice::<ChainEnvelope>(body).is_err());
     }
     assert_eq!(
-        decode_envelope(br#"{"kind":"unknown","v":2}"#),
-        Err(DecodeError::UnknownVersion(2))
+        decode_envelope(br#"{"kind":"unknown","v":3}"#),
+        Err(DecodeError::UnknownVersion(3))
     );
     assert!(serde_json::from_slice::<ChainEnvelope>(
         br#"{"v":2,"kind":"tip","height":1,"hash":"x"}"#

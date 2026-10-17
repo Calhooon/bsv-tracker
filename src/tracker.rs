@@ -16,7 +16,8 @@ pub struct ChainUpdate {
 
 /// A host's tracked transactions, with indexes for targeted chain events.
 /// Hints, ages and spend attempts name one transaction. A tip uses only the
-/// suspect set; reorgs and forks use only the relevant mined height range.
+/// suspect set; reorgs, forks and splits use only the relevant mined height
+/// range.
 #[derive(Clone, Debug)]
 pub struct Tracker {
     params: Params,
@@ -137,7 +138,9 @@ impl Tracker {
     ) -> Vec<ChainUpdate> {
         let targets: Vec<TxId> = match &event {
             ChainEvent::Fork { height, .. } => self.at_or_above(*height),
-            ChainEvent::Reorg { fork_height, .. } => self.at_or_above(*fork_height),
+            ChainEvent::Reorg { fork_height, .. }
+            | ChainEvent::Split { fork_height, .. }
+            | ChainEvent::SplitResolved { fork_height, .. } => self.at_or_above(*fork_height),
             ChainEvent::Invalidated { block_hash } => self
                 .headers
                 .get(block_hash)
