@@ -98,6 +98,26 @@ pub fn reorg(height: u32) -> ChainEvent {
         new_tip: event_header(height + 1, 200),
     }
 }
+// Synthetic version-2 wire data, keyed by the common ancestor's hash.
+pub fn split(fork_height: u32) -> ChainEvent {
+    let tip = |block: u64, rung: &str| SplitTip {
+        hash: hash(block),
+        height: fork_height + 2,
+        chain_work: hash(u64::from(fork_height) + 3),
+        rungs: vec![rung.into()],
+    };
+    ChainEvent::Split {
+        key: format!("split:{}", hash(u64::from(fork_height) - 1)),
+        fork_height,
+        tips: [tip(300, "woc"), tip(301, "arcade")],
+    }
+}
+pub fn split_resolved(fork_height: u32) -> ChainEvent {
+    ChainEvent::SplitResolved {
+        key: format!("split:{}", hash(u64::from(fork_height) - 1)),
+        fork_height,
+    }
+}
 pub fn mined(s: &State, height: u32) {
     assert_eq!(s.word().height(), Some(height), "word: {:?}", s.word());
     let evidence = s.evidence().unwrap();

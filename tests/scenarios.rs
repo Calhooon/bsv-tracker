@@ -161,13 +161,13 @@ fn contract_1_versioned_envelope_fails_loud() {
     mined(&s, 100);
     let mut faults = vec![];
     for body in [
-        br#"{"kind":"future","v":2}"#.as_slice(),
+        br#"{"kind":"future","v":3}"#.as_slice(),
         br#"{"v":1,"kind":"reorg","forkHeight":100,"depth":1,"orphanedHashes":[],"newTip":"b"}"#,
     ] {
         faults.push(decode_envelope(body).unwrap_err());
         mined(&s, 100);
     }
-    assert_eq!(faults[0], DecodeError::UnknownVersion(2));
+    assert_eq!(faults[0], DecodeError::UnknownVersion(3));
     assert!(matches!(
         faults[1],
         DecodeError::UnknownShape {

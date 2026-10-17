@@ -133,9 +133,11 @@ pub enum Reask {
         /// invalidated or its root no longer matches the active header.
         fork_height: Height,
     },
-    /// A fork at or below the mined height; the word is suspect.
+    /// A fork, or a version-2 split, at or below the mined height; the word
+    /// is suspect. A split reuses this re-ask with its `forkHeight`: the host's
+    /// act, a recheck at its depth rule, is the same for both.
     Fork {
-        /// The height at which the branches diverge.
+        /// The height at which the branches diverge (a split's `fork_height`).
         height: Height,
     },
     /// A hint that disagrees with the word; reconcile it.
@@ -377,6 +379,23 @@ impl State {
                 if self.word.height().is_some_and(|h| *fork_height <= h) =>
             {
                 self.stale(*fork_height);
+            }
+            // A split is an observation, not a reorg: the service still answers
+            // its most-work chain and depth is the host's (bsv-stack-lean
+            // docs/RULINGS-2026-10-12.md:323-329, 2026-10-16 19:3xZ). It writes no word.
+            ChainEvent::Split { fork_height, .. }
+                if self.word.height().is_some_and(|h| *fork_height <= h) =>
+            {
+                self.suspect = true;
+                self.reask = Some(Reask::Fork {
+                    height: *fork_height,
+                });
+            }
+            // A resolved split moves a word only through the checked snapshot.
+            ChainEvent::SplitResolved { fork_height, .. }
+                if self.suspect && self.word.height().is_some_and(|h| *fork_height <= h) =>
+            {
+                self.recheck(headers)?;
             }
             ChainEvent::Invalidated { block_hash } => {
                 if let Word::Mined(mined) = &self.word {

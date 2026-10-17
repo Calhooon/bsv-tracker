@@ -121,8 +121,9 @@ jobs:
           restore-keys: |
             ubuntu-vectors-
 
-      # tests/vectors/chain_events/{tip,fork,reorg,invalidated,frozen,tip_age}.json
-      - name: The six chain-event envelope vectors
+      # tests/vectors/chain_events/{tip,fork,reorg,invalidated,frozen,tip_age}.json (v1)
+      # and {split,split_resolved}.json (v2)
+      - name: The eight chain-event envelope vectors
         run: |
           cargo test --locked --test chain_events -- --exact \
             pinned_tip_round_trip \
@@ -130,8 +131,10 @@ jobs:
             pinned_reorg_round_trip \
             pinned_invalidated_round_trip \
             pinned_frozen_round_trip \
-            pinned_tip_age_round_trip | tee chain_events.out
-          grep -q '^test result: ok. 6 passed; 0 failed; 0 ignored' chain_events.out
+            pinned_tip_age_round_trip \
+            pinned_split_round_trip \
+            pinned_split_resolved_round_trip | tee chain_events.out
+          grep -q '^test result: ok. 8 passed; 0 failed; 0 ignored' chain_events.out
 
       # tests/vectors/arc_tx_status_verdicts.json
       - name: The ARC status vector
