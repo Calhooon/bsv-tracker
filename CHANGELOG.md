@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0] - unreleased
+
+Decode the header service's feed at envelope version 2 (Calhooon/bsv-tracker #11; chaintracks-cloudflare v0.4.1). The public `ChainEvent` enum widens by two variants, so a host's exhaustive `match` stops compiling: the minor, by the semver note of 0.3.0.
+
+- `ChainEvent::Split { key, fork_height, tips: [SplitTip; 2] }` and `ChainEvent::SplitResolved { key, fork_height }`, `v: 2` on the wire; `SplitTip { hash, height, chain_work, rungs }` exported; `ChainEvent::version()`. Shape and relationship checks as at chaintracks-cloudflare@v0.4.1 `src/events.rs:157-161,210-232`.
+- The version gate: `v: 1` carries the six original kinds, `v: 2` the two split kinds; `v: 2` with a version-1 kind, or `v: 1` with a split kind, is `UnknownKind`; any other `v` is `UnknownVersion`. A `v: 2` envelope used to be `UnknownVersion(2)` whatever its kind. The six version-1 kinds decode as before.
+- The state rule: a split marks the mined words at or above `forkHeight` suspect with `Reask::Fork { height: forkHeight }` and writes no word; `splitResolved` rechecks the suspect words at or above `forkHeight` against the host's headers. A split never writes a word; a resolved split moves a word only through a checked proof.
+- The `vectors` job runs eight envelope vectors (the two split kinds added).
+
 ## Unreleased
 
 The lint bar (bsv-stack-lean #134, #135, #137, #139, #140, #145); no behavior change.

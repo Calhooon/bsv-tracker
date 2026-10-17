@@ -1349,3 +1349,23 @@ $ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target
    Compiling bsv-tracker v0.1.0 (/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope)
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.43s
 ```
+
+## Envelope version 2: `split` and `splitResolved` (2026-10-17)
+
+[X] Worktree `/Volumes/Lanes/worktrees/bsv-tracker/tracker-v2`, branch `lane/tracker-v2`, base `5f5bd94`; Calhooon/bsv-tracker #11. No push, PR, tag, publish or stash.
+
+[SRC] The emitter was read only through `git -C /Volumes/Lanes/targets/l2/ct-public-v0.4.1 show v0.4.1:<path>`: `src/events.rs:50-57` (`SplitTip`), `95-107` (the two variants), `130-146` (the version gate), `157-161,210-232` (the relationship checks); `docs/SPLITS.md:68-101`; `docs/CHAIN-EVENTS.md:1-8,204-221`; `migrations/0010_rung_tips.sql:63-74,82-87` (the emitted key order). The state rule's source is `bsv-stack-lean docs/RULINGS-2026-10-12.md:323-329`.
+
+| change | witness | result |
+|---|---|---|
+| `ChainEvent::Split`, `ChainEvent::SplitResolved`, `SplitTip`, `ChainEvent::version()`; serialization carries the kind's version | `pinned_split_round_trip`, `pinned_split_resolved_round_trip` (byte equal) | pass |
+| gate: `v: 1` six kinds, `v: 2` two split kinds; other `v` `UnknownVersion`, crossed kinds `UnknownKind` | `future_kind_and_version_are_typed_host_faults`, `version_one_kinds_under_version_two_are_refused_with_valid_bodies` | pass |
+| the emitter's split relationship checks | `split_shapes_mirror_the_emitter_relationship_checks` (41 refused shapes, the tip-at-`forkHeight` boundary admitted) | pass |
+| split: suspect plus `Reask::Fork { height: forkHeight }` at or above, no word moves | `split_marks_a_mined_word_suspect_and_never_stale`, `split_writes_no_word` (256 ChaCha traces, emptied snapshot) | pass |
+| splitResolved: recheck of suspect words at or above through the snapshot | `split_resolved_rechecks_through_the_snapshot` (clear, stale, unavailable, untouched) | pass |
+| tracker routing `at_or_above(forkHeight)` for both kinds | `tracker_routes_splits_to_the_mined_range_at_or_above` | pass |
+| the six version-1 kinds unchanged | the six `pinned_*_round_trip` and every earlier test, unmodified except three assertions that named `v: 2` as an unknown version, now `v: 3` | pass |
+
+[X] Gate, each exit 0, logs under `/Volumes/Lanes/out/bsv-tracker/tracker-v2/`: `cargo fmt --check`; `cargo +1.99.0 clippy --all-targets -- -D warnings` (and the default stable); `cargo test`, 43 passed (chain_events 14, properties 4, scenarios 7, splits 4, transitions 9, verdicts 2, doc tests 3); `cargo +1.88.0 check`; `cargo build --target wasm32-unknown-unknown --features wasm`; `actionlint .github/workflows/ci.yml`. The `vectors` job's command, run locally: `test result: ok. 8 passed`.
+
+[D] The two split vectors are synthetic in the documented shape: the emitter publishes no literal example and no beta envelope was captured. The decoder refuses a version-1 kind under `v: 2`, which the emitter's own reader admits; the emitter never writes one. The Lean machine has no split input, so the rule is a projection of the ruling, unproved in Lean. Unverified: live delivery from the beta, a host adapter, the stack's corpus scenario for the rule.
