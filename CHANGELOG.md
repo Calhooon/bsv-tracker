@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.1] - 2026-10-18
+
+The Arcade vocabulary against LOW's nine bodies (bsv-stack-lean #169; bsv-overlay-cloudflare `crates/overlay-cloudflare/src/door_words.rs`, test `tracker_vocabulary_differs_from_the_door_exactly_here`). Every broadcaster word is still a hint, never a verdict, and a hint writes no chain word. No change to the public types, only to what they hold.
+
+- The status word is trimmed before the vocabulary check: `" SEEN_ON_NETWORK "` is `Seen`, where it used to be `UnknownStatus`. `Verdict::status` now holds the trimmed, upper-cased word (`rejected` reads as `REJECTED`).
+- `PENDING_RETRY` and `STUMP_PROCESSING`, a broadcaster still working on it, are `Accepted`; they used to be `Unknown`.
+- Only the status word moves the status. `extraInfo` is text and stays on `Verdict::reason`: an `ORPHAN` there no longer makes `OrphanMempool` (only `SEEN_IN_ORPHAN_MEMPOOL` does), and a `reorg_unmined` there no longer makes `StaleBlock` (only the stale-block words do). The P0-2 vector's `200_seen_on_network_extra_info_orphan` is now the tracker's `seen` hint.
+- Unchanged, deliberately: a mined word with no height is `Unknown`; named competitors behind an accepting word are `DoubleSpend`; `INVALID` is `Rejected`, `UTXO_SPENT` `DoubleSpend`, `CONFIRMED` with a height `Mined`.
+- `tests/arcade_bodies.rs`: the nine bodies verbatim, one test each.
+
 ## [0.4.0] - 2026-10-17
 
 Decode the header service's feed at envelope version 2 (Calhooon/bsv-tracker #11; chaintracks-cloudflare v0.4.1). The public `ChainEvent` enum widens by two variants, so a host's exhaustive `match` stops compiling: the minor, by the semver note of 0.3.0.

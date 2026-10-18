@@ -58,11 +58,11 @@ impl Hint {
 /// Raw broadcaster metadata. HTTP acceptance is not chain evidence.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Verdict {
-    /// The raw `txStatus` word, as the body spelled it.
+    /// The `txStatus` word, trimmed and upper-cased by [`Verdict::from_arc_body`].
     pub status: String,
     /// The raw `blockHeight`, when present.
     pub height: Option<Height>,
-    /// The raw `extraInfo`, when present.
+    /// The raw `extraInfo`, when present: text, never a status.
     pub reason: Option<String>,
     /// The `competingTxs`, lowercased and checked for shape and uniqueness.
     pub competitors: Vec<TxId>,
@@ -70,6 +70,12 @@ pub struct Verdict {
 impl Verdict {
     /// Read an ARC body as metadata, checking its echoed txid and the bounded
     /// status vocabulary at bsv-rs@7bc623c. HTTP status is never consulted.
+    ///
+    /// The word is trimmed before the vocabulary check and kept trimmed and
+    /// upper-cased, so `" SEEN_ON_NETWORK "` reads as `SEEN_ON_NETWORK`
+    /// (0.4.1; bsv-stack-lean #169, the spaced body of LOW's door test
+    /// `tracker_vocabulary_differs_from_the_door_exactly_here` in
+    /// bsv-overlay-cloudflare `crates/overlay-cloudflare/src/door_words.rs`).
     ///
     /// # Errors
     ///
@@ -121,8 +127,9 @@ impl Verdict {
         {
             return Err(VerdictError::InvalidMetadata);
         }
+        let status = body.tx_status.trim().to_ascii_uppercase();
         let known = matches!(
-            body.tx_status.to_ascii_uppercase().as_str(),
+            status.as_str(),
             "SUCCESS"
                 | "UNKNOWN"
                 | "RECEIVED"
@@ -151,13 +158,25 @@ impl Verdict {
             return Err(VerdictError::UnknownStatus(body.tx_status));
         }
         Ok(Self {
-            status: body.tx_status,
+            status,
             height: body.block_height,
             reason: body.extra_info,
             competitors,
         })
     }
     /// Interpret a status as a hint; no result is a node verdict or a proof.
+    ///
+    /// Only the status word moves the status (0.4.1; bsv-stack-lean #169,
+    /// LOW's door test `tracker_vocabulary_differs_from_the_door_exactly_here`
+    /// in bsv-overlay-cloudflare `crates/overlay-cloudflare/src/door_words.rs`):
+    /// `extraInfo` is text and stays on `reason`, so an `ORPHAN` or
+    /// `reorg_unmined` there no longer overrides the word; only
+    /// `SEEN_IN_ORPHAN_MEMPOOL` is [`HintStatus::OrphanMempool`] and only the
+    /// stale-block words are [`HintStatus::StaleBlock`]. `PENDING_RETRY` and
+    /// `STUMP_PROCESSING`, a broadcaster still working on it, are
+    /// [`HintStatus::Accepted`]. A mined word with no height stays
+    /// [`HintStatus::Unknown`], and named competitors still turn an accepting
+    /// word into [`HintStatus::DoubleSpend`].
     pub fn into_hint(self, source: impl Into<String>, observed: Timestamp) -> Hint {
         let status = match self.status.to_ascii_uppercase().as_str() {
             "SUCCESS"
@@ -167,7 +186,9 @@ impl Verdict {
             | "STORED"
             | "ANNOUNCED_TO_NETWORK"
             | "REQUESTED_BY_NETWORK"
-            | "ACCEPTED_BY_NETWORK" => HintStatus::Accepted,
+            | "ACCEPTED_BY_NETWORK"
+            | "PENDING_RETRY"
+            | "STUMP_PROCESSING" => HintStatus::Accepted,
             "SEEN_ON_NETWORK" | "SEEN_MULTIPLE_NODES" => HintStatus::Seen,
             "MINED" | "CONFIRMED" | "IMMUTABLE" => self
                 .height
@@ -188,20 +209,7 @@ impl Verdict {
             },
             _ => HintStatus::Unknown,
         };
-        let status = if self
-            .reason
-            .as_deref()
-            .is_some_and(|r| r.eq_ignore_ascii_case("reorg_unmined"))
-        {
-            HintStatus::StaleBlock
-        } else if self.status.to_ascii_uppercase().contains("ORPHAN")
-            || self
-                .reason
-                .as_deref()
-                .is_some_and(|r| r.to_ascii_uppercase().contains("ORPHAN"))
-        {
-            HintStatus::OrphanMempool
-        } else if !self.competitors.is_empty()
+        let status = if !self.competitors.is_empty()
             && matches!(status, HintStatus::Accepted | HintStatus::Seen)
         {
             // A named competitor cannot disappear behind an accepting word.

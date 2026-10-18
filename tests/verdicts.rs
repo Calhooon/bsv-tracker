@@ -43,10 +43,31 @@ fn arc_p0_2_twenty_bodies_are_only_hints() {
         let hint = verdict.into_hint("ARC vector", 123);
         assert_eq!(hint.source, "ARC vector");
         assert_eq!(hint.observed, 123);
+        // 0.4.1 (bsv-stack-lean #169): the word is kept trimmed and upper-cased.
         assert_eq!(
             hint.verdict.as_ref().unwrap().status,
-            case["body"]["txStatus"].as_str().unwrap()
+            case["body"]["txStatus"]
+                .as_str()
+                .unwrap()
+                .trim()
+                .to_ascii_uppercase()
         );
+        // 0.4.1 (bsv-stack-lean #169): extraInfo is text, never a status, so
+        // an accepting word with an orphan note is the tracker's `seen` hint
+        // where the broadcaster's verdict in the vector is a failure.
+        if name == "200_seen_on_network_extra_info_orphan" {
+            assert_eq!(hint.status, HintStatus::Seen, "{name}");
+            assert_eq!(
+                hint.verdict.as_ref().unwrap().reason.as_deref(),
+                Some("seen in orphan mempool")
+            );
+            let mut s = State::new(txid);
+            step(&mut s, &h, Input::Host(HostAction::Build));
+            step(&mut s, &h, Input::Hint(hint));
+            assert_eq!(s.word().chain(), None, "{name}");
+            assert_eq!(s.evidence(), None, "{name}");
+            continue;
+        }
         let mut s = State::new(txid);
         step(&mut s, &h, Input::Host(HostAction::Build));
         step(&mut s, &h, Input::Hint(hint));
@@ -96,7 +117,8 @@ fn arcade_twelve_words_and_reorg_markers_remain_hints() {
         competitors: vec![],
     }
     .into_hint("Arcade", 10);
-    assert_eq!(unmine.status, HintStatus::StaleBlock);
+    // 0.4.1 (bsv-stack-lean #169): only the status words name a stale block.
+    assert_eq!(unmine.status, HintStatus::Seen);
     let reanchor = Verdict {
         status: "MINED".into(),
         height: Some(11),
