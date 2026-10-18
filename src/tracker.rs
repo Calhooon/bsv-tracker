@@ -65,6 +65,20 @@ impl Tracker {
             .entry(txid.clone())
             .or_insert_with(|| State::new(txid))
     }
+    /// Hold a state restored by [`State::from_compact`] and index it as a
+    /// transition would; a restored `mined` word joins the suspect set, so the
+    /// next tip rechecks it. The state it replaces, if the txid was tracked.
+    pub fn restore(&mut self, state: State) -> Option<State> {
+        let txid = state.txid().to_owned();
+        let tracked = self.states.contains_key(&txid);
+        let mut previous = None;
+        // The transition only swaps the state; it cannot fail.
+        let _ = self.apply_transition(&txid, |_, slot| {
+            previous = Some(std::mem::replace(slot, state));
+            Ok(())
+        });
+        previous.filter(|_| tracked)
+    }
     /// An immutable state, or none when the host does not track this txid.
     #[must_use]
     pub fn get(&self, txid: &str) -> Option<&State> {

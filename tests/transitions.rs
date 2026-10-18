@@ -429,3 +429,63 @@ fn envelopes_round_trip_and_reject_every_unknown_shape() {
     )
     .is_err());
 }
+
+#[test]
+fn a_couriers_mempool_presence_is_a_hint_that_never_promotes() {
+    let txid = hash(1);
+    let mut h = TestHeaders::default();
+    let present = |source: &str, at| {
+        hint(
+            HintStatus::MempoolPresent {
+                source: source.into(),
+            },
+            at,
+        )
+    };
+
+    // Built: a courier holding the bytes is not a broadcaster's acceptance.
+    let mut s = State::new(&txid);
+    step(&mut s, &h, Input::Host(HostAction::Build));
+    step(&mut s, &h, present("woc", 5));
+    assert_eq!(s.word(), &Word::Built);
+    assert!(matches!(s.reask(), Some(Reask::Hint(_))));
+    assert_eq!(s.last_hint_at(), Some(5));
+    assert_eq!(
+        s.hints()[0].status,
+        HintStatus::MempoolPresent {
+            source: "woc".into()
+        }
+    );
+
+    // Announced: it agrees, moves nothing and restarts the age clock.
+    let mut s = State::new(&txid);
+    step(&mut s, &h, Input::Host(HostAction::Build));
+    step(&mut s, &h, hint(HintStatus::Accepted, 0));
+    step(&mut s, &h, present("woc", 30));
+    assert_eq!(s.word(), &Word::Announced);
+    assert_eq!(s.reask(), None);
+    assert_eq!(s.last_hint_at(), Some(30));
+    step(&mut s, &h, Input::Host(HostAction::Tick(89)));
+    assert_eq!(s.reask(), None);
+    step(&mut s, &h, Input::Host(HostAction::Tick(90)));
+    assert_eq!(s.reask(), Some(&Reask::Age));
+    assert_eq!(s.word(), &Word::Announced);
+
+    // Mined: the chain word and its evidence stay; the hint is re-asked.
+    let mut s = State::new(&txid);
+    let p = proof(&txid, 10, 2);
+    h.insert(&p, 10);
+    step(&mut s, &h, Input::Evidence(Evidence::Proof(p)));
+    let before = s.clone();
+    step(&mut s, &h, present("woc", 40));
+    mined(&s, 10);
+    assert_eq!(s.evidence(), before.evidence());
+    assert_eq!(s.suspect(), before.suspect());
+    assert!(matches!(s.reask(), Some(Reask::Hint(_))));
+
+    // No ARC word reduces to it: a broadcaster's seen stays seen.
+    let seen = Verdict::from_arc_body(&txid, br#"{"txStatus":"SEEN_ON_NETWORK"}"#)
+        .unwrap()
+        .into_hint("arc", 0);
+    assert_eq!(seen.status, HintStatus::Seen);
+}

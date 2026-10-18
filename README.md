@@ -29,7 +29,10 @@ runtime.
 to a transaction and comparing its root with the active header snapshot.
 `CheckedProof` has no other constructor and no deserializer, so stored proofs
 must be checked again; deserializing bytes does not create a trusted mined
-state. Hosts only serve current inclusion evidence from a non-suspect
+state. `State::to_compact` and `State::from_compact` (0.5.0) store and restore
+one state as versioned bytes for a host that keeps no memory between requests;
+a restored `Word::Mined` comes back suspect with `Reask::Recheck` due, and a
+`Tracker` that holds it through `Tracker::restore` rechecks it on the next tip. Hosts only serve current inclusion evidence from a non-suspect
 `Word::Mined` and calculate current depth from their current tip.
 
 An unavailable header or failed check keeps the word and schedules a re-ask.
@@ -51,7 +54,9 @@ HTTP status. The `txStatus` word is trimmed and upper-cased before the
 vocabulary check; `extraInfo` is text kept on `Verdict::reason` and never
 moves the status. A word outside the vocabulary is
 `VerdictError::UnknownStatus`. Every hint, `HintStatus::Mined` included, writes no chain
-word.
+word. `HintStatus::MempoolPresent { source }` (0.5.0) records a courier's
+mempool presence, a node the host did not broadcast through holding the bytes;
+it is not a broadcaster word and never promotes a word.
 
 ## Events and records
 

@@ -1,5 +1,6 @@
 use crate::{
-    ChainEvent, CheckError, CheckedProof, Headers, Height, Hint, HintStatus, Proof, Timestamp, TxId,
+    ChainEvent, CheckError, CheckedProof, CompactError, Headers, Height, Hint, HintStatus, Proof,
+    Timestamp, TxId,
 };
 use std::sync::Arc;
 
@@ -219,6 +220,79 @@ impl State {
     pub fn reask(&self) -> Option<&Reask> {
         self.reask.as_ref()
     }
+    /// The compact byte form (bsv-stack-lean #92): a version byte, the txid,
+    /// the word, the evidence, the suspect mark, the hints, the last hint time
+    /// and the re-ask. The layout is in the source of `src/compact.rs`; the
+    /// version byte changes when the layout does, so a later release tells an
+    /// earlier layout from its own rather than misreading it.
+    #[must_use]
+    pub fn to_compact(&self) -> Vec<u8> {
+        crate::compact::encode(&crate::compact::Fields {
+            txid: &self.txid,
+            word: &self.word,
+            evidence: self.evidence.as_deref(),
+            suspect: self.suspect,
+            hints: &self.hints,
+            last_hint_at: self.last_hint_at,
+            reask: self.reask.as_ref(),
+        })
+    }
+    /// Restore a state from [`State::to_compact`]'s bytes.
+    ///
+    /// The rule: a restored `mined` word is still suspect until its proof is
+    /// re-checked against the host's headers. [`CheckedProof`] has no
+    /// deserializer, because bytes are not a check: the chain may have moved
+    /// while the state was stored. So the stored proof comes back as the
+    /// record (its path reduces for this txid to the stored root, which equals
+    /// the stored header's root), the word comes back `mined` on that record,
+    /// and the state is marked [`suspect`](State::suspect) with
+    /// [`Reask::Recheck`] due when no other re-ask was pending. A
+    /// [`Tracker`](crate::Tracker) holding it rechecks it on the next tip,
+    /// as it does any suspect word; a host holding the state alone feeds
+    /// [`Evidence::Recheck`] before it serves the inclusion.
+    ///
+    /// Every other field returns exactly: a state whose word is not `mined`,
+    /// or that was already suspect with a re-ask pending, restores equal to
+    /// the state that wrote the bytes, and a restored state writes bytes that
+    /// restore equal to it.
+    ///
+    /// # Errors
+    ///
+    /// [`CompactError::UnknownVersion`] for a version this crate does not
+    /// read, [`CompactError::Truncated`], [`CompactError::TrailingBytes`] and
+    /// [`CompactError::Malformed`] for bytes the encoder never writes (a
+    /// `mined` word with no stored proof among them), and
+    /// [`CompactError::Evidence`] for a stored proof that does not hold
+    /// together.
+    pub fn from_compact(bytes: &[u8]) -> Result<Self, CompactError> {
+        let parts = crate::compact::decode(bytes)?;
+        let evidence = parts.evidence.map(Arc::new);
+        let mined = parts.word.is_none();
+        let word = if let Some(word) = parts.word {
+            word
+        } else {
+            let checked = evidence
+                .as_ref()
+                .ok_or(CompactError::Malformed("mined word with no stored proof"))?;
+            Word::Mined(Mined {
+                checked: Arc::clone(checked),
+            })
+        };
+        let mut state = Self {
+            txid: parts.txid,
+            word,
+            evidence,
+            suspect: parts.suspect,
+            hints: parts.hints,
+            last_hint_at: parts.last_hint_at,
+            reask: parts.reask,
+        };
+        if mined {
+            state.suspect = true;
+            state.reask.get_or_insert(Reask::Recheck);
+        }
+        Ok(state)
+    }
     /// Execute one Lean transition. Proof and header failures retain the word
     /// and record the re-ask before returning an error to the host.
     ///
@@ -431,7 +505,10 @@ impl State {
 
 fn agrees(word: &Word, status: &HintStatus) -> bool {
     match (word, status) {
-        (Word::Announced | Word::Seen, HintStatus::Accepted)
+        (
+            Word::Announced | Word::Seen,
+            HintStatus::Accepted | HintStatus::MempoolPresent { .. },
+        )
         | (Word::Seen, HintStatus::Seen)
         | (Word::Stale, HintStatus::StaleBlock)
         | (Word::Rejected { .. }, HintStatus::Rejected { .. })
