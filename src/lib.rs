@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+mod compact;
 mod events;
 mod evidence;
 mod hints;
@@ -7,6 +8,7 @@ mod host;
 mod state;
 mod tracker;
 
+pub use compact::{CompactError, COMPACT_VERSION};
 pub use events::{
     decode_envelope, ChainEnvelope, ChainEvent, DecodeError, EventHeader, Outpoint, SplitTip,
 };

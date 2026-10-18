@@ -35,7 +35,7 @@ fn trace() -> impl Strategy<Value = Vec<(u8, u32, u64, u8, u8)>> {
 
 fn status(code: u8, height: u32, observed: u64) -> Input {
     hint(
-        match code % 8 {
+        match code % 9 {
             0 => HintStatus::Accepted,
             1 => HintStatus::Seen,
             2 => HintStatus::Mined { height },
@@ -47,6 +47,9 @@ fn status(code: u8, height: u32, observed: u64) -> Input {
                 competitors: vec![hash(2)],
             },
             6 => HintStatus::OrphanMempool,
+            7 => HintStatus::MempoolPresent {
+                source: format!("courier-{code}"),
+            },
             _ => HintStatus::Unknown,
         },
         observed,

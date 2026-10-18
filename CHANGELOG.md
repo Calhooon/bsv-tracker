@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0] - 2026-10-18
+
+The compact State form and the courier's mempool presence (bsv-stack-lean #92, #93, #98). The public `HintStatus` enum widens by one variant, so a host's exhaustive `match` on it stops compiling: the minor, by the semver note of 0.3.0. Every other change is additive.
+
+- `State::to_compact() -> Vec<u8>` and `State::from_compact(&[u8]) -> Result<State, CompactError>`: a version byte (`COMPACT_VERSION`, 1), the txid, the word, the evidence, the suspect mark, the hints, the last hint time and the re-ask, the layout in `src/compact.rs`. The decoder takes only the bytes the encoder writes and refuses a stored proof that does not hold together (`CompactError::Evidence`); it consults no headers.
+- The restore rule: a restored `mined` word is still suspect until its proof is rechecked against the host's headers (`CheckedProof` has no deserializer). `from_compact` restores the word on the stored record, marks the state suspect and sets `Reask::Recheck` when no other re-ask was pending; every other field returns exactly, and a restored state is a fixed point of the round trip.
+- `Tracker::restore(State) -> Option<State>`: holds a restored state with its indexes, so a restored mined word joins the suspect set and the next tip rechecks it.
+- `HintStatus::MempoolPresent { source }`: a courier's mempool presence, not a broadcaster word. It writes no chain word, never promotes `built`, agrees with `announced` and `seen`, restarts the age clock (the age re-ask falls due `age_threshold` after it) and schedules the hint's re-ask against any other word. `Verdict::into_hint` never produces it.
+- `tests/compact.rs`: the round trip over 256 reproducible random states, every truncation, forged records, and restore then recheck (agreeing headers clear the mark; moved headers make the word stale). `tests/transitions.rs`: the presence rows. The property traces of `tests/properties.rs` include the presence hint.
+
 ## [0.4.1] - 2026-10-18
 
 The Arcade vocabulary against LOW's nine bodies (bsv-stack-lean #169; bsv-overlay-cloudflare `crates/overlay-cloudflare/src/door_words.rs`, test `tracker_vocabulary_differs_from_the_door_exactly_here`). Every broadcaster word is still a hint, never a verdict, and a hint writes no chain word. No change to the public types, only to what they hold.

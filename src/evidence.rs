@@ -156,6 +156,29 @@ impl CheckedProof {
     pub fn depth(&self) -> u64 {
         self.depth
     }
+    /// A stored record, held together but not checked against any headers:
+    /// only [`State::from_compact`](crate::State::from_compact) calls this,
+    /// and it marks the record's mined word suspect with a recheck due.
+    pub(crate) fn restored(
+        proof: Proof,
+        header: Header,
+        root: Hash,
+        depth: u64,
+    ) -> Result<Self, CheckError> {
+        let height = proof.height();
+        if proof.root()? != root || header.merkle_root != root {
+            return Err(CheckError::RootMismatch(height));
+        }
+        if depth == 0 {
+            return Err(CheckError::InvalidProof("depth must be at least 1".into()));
+        }
+        Ok(Self {
+            proof,
+            header,
+            root,
+            depth,
+        })
+    }
 }
 
 /// A host supplied snapshot of fresh, verified active headers. Both methods
