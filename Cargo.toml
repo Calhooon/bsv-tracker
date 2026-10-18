@@ -1,6 +1,6 @@
 [package]
 name = "bsv-tracker"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 # The lowest toolchain that builds the crate: bsv-rs 0.6.0 calls
 # slice::as_chunks, stable from 1.88 (1.87 refuses it, E0658).
