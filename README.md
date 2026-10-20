@@ -1,8 +1,8 @@
 # bsv-tracker
 
-**0.4.1**, a transaction evidence state machine on **bsv-rs ^0.6.0**. The tag
-`v0.4.1` is the release of record, and crates.io carries the same version,
-0.4.1; the repository's Releases page has a Release for each tag.
+**0.7.0**, a transaction evidence state machine on **bsv-rs ^0.7**. The tag
+`v0.7.0` is the release of record, and crates.io carries the same version,
+0.7.0; the repository's Releases page has a Release for each tag.
 
 The tracker owns re-asking: per transaction it keeps a word, the evidence
 behind it, the hints received and the next re-ask. Checked headers and proofs
@@ -15,7 +15,7 @@ without giving this crate a network client or a periodic chain scan.
 
 ```toml
 [dependencies]
-bsv-tracker = "0.4.1"
+bsv-tracker = "0.7.0"
 ```
 
 The crate needs Rust 1.88 or newer (`rust-version` in `Cargo.toml`). Enable
