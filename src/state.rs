@@ -128,10 +128,13 @@ pub enum Input {
 /// A value for the host to execute; the crate never fetches anything.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Reask {
-    /// The mined word went stale; fetch a fresh proof.
+    /// The root moved: the active header at the mined height no longer
+    /// carries the stored proof's root, so the word is stale; fetch a fresh
+    /// proof. After a chain event a host fetches only for these, a few a pass;
+    /// the pacing is the host's.
     Reorg {
-        /// The lowest replaced height, or the mined height when its block was
-        /// invalidated or its root no longer matches the active header.
+        /// The reorg's fork height when a reorg's recheck found the root
+        /// moved; otherwise the mined height (an invalidation, a recheck).
         fork_height: Height,
     },
     /// A fork, or a version-2 split, at or below the mined height; the word
@@ -313,14 +316,19 @@ impl State {
             Input::Evidence(Evidence::Competitor(proof)) => self.on_competitor(headers, proof)?,
             Input::Evidence(Evidence::Chain(event)) => self.on_chain(headers, &event)?,
             Input::Evidence(Evidence::Verdict(verdict)) => self.on_verdict(verdict),
-            Input::Evidence(Evidence::Recheck) => self.recheck(headers)?,
+            Input::Evidence(Evidence::Recheck) => self.recheck(headers, None)?,
         }
         Ok(())
     }
 
     fn on_hint(&mut self, hint: Hint) {
         match (&self.word, &hint.status) {
-            (Word::Built, HintStatus::Accepted) => self.word = Word::Announced,
+            // A node we did not broadcast through holds the bytes, so someone
+            // announced it; the chain has no author (ruling (2), bsv-stack-lean
+            // docs/RULINGS-2026-10-12.md, 2026-10-20 19:4xZ).
+            (Word::Built, HintStatus::Accepted | HintStatus::MempoolPresent { .. }) => {
+                self.word = Word::Announced;
+            }
             (Word::Built | Word::Announced, HintStatus::Seen) => self.word = Word::Seen,
             _ => {}
         }
@@ -408,7 +416,16 @@ impl State {
         }
     }
 
-    fn recheck<H: Headers + ?Sized>(&mut self, headers: &H) -> Result<(), CheckError> {
+    /// The local recheck: the stored proof's root against the active header's
+    /// root at the word's height, a header read and never a fetch. Equal, the
+    /// word stands and the marks clear; different, the word is stale with
+    /// [`Reask::Reorg`] at `fork_height` (the word's height when none is
+    /// given); no header, the word stands with [`Reask::Recheck`].
+    fn recheck<H: Headers + ?Sized>(
+        &mut self,
+        headers: &H,
+        fork_height: Option<Height>,
+    ) -> Result<(), CheckError> {
         let Word::Mined(mined) = &self.word else {
             return Ok(());
         };
@@ -419,7 +436,7 @@ impl State {
                 self.suspect = false;
                 self.reask = None;
             }
-            Ok(Some(_)) => self.stale(height),
+            Ok(Some(_)) => self.stale(fork_height.unwrap_or(height)),
             Ok(None) => {
                 self.reask = Some(Reask::Recheck);
                 return Err(CheckError::Unavailable(height));
@@ -438,13 +455,26 @@ impl State {
         self.reask = Some(Reask::Reorg { fork_height });
     }
 
+    /// A chain event names the words to recheck; only the headers move one.
+    ///
+    /// The rule by the root (ruling (5), bsv-stack-lean
+    /// docs/RULINGS-2026-10-12.md, 2026-10-20 19:4xZ): a `mined` word is
+    /// `stale` when, and only when, its stored proof's root is not the active
+    /// header's root at its height in the host's headers. A reorg at or below
+    /// the word's height and an invalidation of its checked header both run
+    /// the local recheck; the event's numbers are the bound of that recheck,
+    /// never the stale mark. The word is suspect while the recheck is open, so
+    /// a missing header leaves it suspect with [`Reask::Recheck`] (fail
+    /// closed) and the next tip rechecks it. A fork or a split marks the word
+    /// suspect with [`Reask::Fork`]; a resolved split and a tip recheck the
+    /// suspect words.
     pub(crate) fn on_chain<H: Headers + ?Sized>(
         &mut self,
         headers: &H,
         event: &ChainEvent,
     ) -> Result<(), CheckError> {
         match event {
-            ChainEvent::Tip { .. } if self.suspect => self.recheck(headers)?,
+            ChainEvent::Tip { .. } if self.suspect => self.recheck(headers, None)?,
             ChainEvent::Fork { height, .. } if self.word.height().is_some_and(|h| *height <= h) => {
                 self.suspect = true;
                 self.reask = Some(Reask::Fork { height: *height });
@@ -452,7 +482,8 @@ impl State {
             ChainEvent::Reorg { fork_height, .. }
                 if self.word.height().is_some_and(|h| *fork_height <= h) =>
             {
-                self.stale(*fork_height);
+                self.suspect = true;
+                self.recheck(headers, Some(*fork_height))?;
             }
             // A split is an observation, not a reorg: the service still answers
             // its most-work chain and depth is the host's (bsv-stack-lean
@@ -469,18 +500,19 @@ impl State {
             ChainEvent::SplitResolved { fork_height, .. }
                 if self.suspect && self.word.height().is_some_and(|h| *fork_height <= h) =>
             {
-                self.recheck(headers)?;
+                self.recheck(headers, None)?;
             }
-            ChainEvent::Invalidated { block_hash } => {
-                if let Word::Mined(mined) = &self.word {
-                    if &mined.checked().header().hash == block_hash {
-                        self.stale(mined.height());
-                    }
-                }
+            ChainEvent::Invalidated { block_hash } if self.checked_against(block_hash) => {
+                self.suspect = true;
+                self.recheck(headers, None)?;
             }
             _ => {}
         }
         Ok(())
+    }
+
+    fn checked_against(&self, block_hash: &str) -> bool {
+        matches!(&self.word, Word::Mined(m) if m.checked().header().hash == block_hash)
     }
 
     fn on_verdict(&mut self, verdict: NodeVerdict) {

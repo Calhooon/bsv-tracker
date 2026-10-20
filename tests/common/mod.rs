@@ -34,6 +34,18 @@ impl TestHeaders {
             },
         );
     }
+    /// The new branch's header at `height`: block `block`, a root no tracked
+    /// proof reduces to, so a word mined there before has had its root moved.
+    pub fn move_root(&mut self, height: u32, block: u64) {
+        self.tip = self.tip.max(height);
+        self.headers.insert(
+            height,
+            Header {
+                hash: hash(block),
+                merkle_root: hash(block + 5_000),
+            },
+        );
+    }
 }
 impl Headers for TestHeaders {
     fn header_at(&self, height: u32) -> Result<Option<Header>, HeaderError> {

@@ -143,6 +143,13 @@ impl Tracker {
     }
     /// Deliver an evidence event only to the set it names. The output contains
     /// every selected txid and each fault for the host to report.
+    ///
+    /// The selection is the bound of the recheck, never the stale mark: a
+    /// reorg names the mined words at or above its fork height and an
+    /// invalidation the words checked against its block, and each is rechecked
+    /// against `headers` by its stored root. Only a word whose root moved
+    /// comes back with [`Reask::Reorg`]; a host fetches proofs for those
+    /// alone, a few a pass, the pacing being the host's.
     // By reference would break the public API; a later minor (bsv-stack-lean #134).
     #[allow(clippy::needless_pass_by_value)]
     pub fn on_chain<H: Headers + ?Sized>(
