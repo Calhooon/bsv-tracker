@@ -7,7 +7,7 @@
 The tracker owns re-asking: per transaction it keeps a word, the evidence
 behind it, the hints received and the next re-ask. Checked headers and proofs
 establish mining and conflicts; broadcaster words only supply hints. A reorg
-re-asks affected transactions. Hosts provide headers, proofs, hints and time,
+re-asks only the transactions whose proof's root left the active headers. Hosts provide headers, proofs, hints and time,
 so wallet, overlay and application hosts can use the same transition logic
 without giving this crate a network client or a periodic chain scan.
 
@@ -36,14 +36,17 @@ a restored `Word::Mined` comes back suspect with `Reask::Recheck` due, and a
 `Word::Mined` and calculate current depth from their current tip.
 
 An unavailable header or failed check keeps the word and schedules a re-ask.
-Reorg evidence marks affected inclusion stale. Broadcaster rejection and
+Broadcaster rejection and
 mempool conflict do not by themselves write `Rejected` or `Conflicted`.
 `NodeVerdict` is a separate host-supplied authority boundary; a host must not
 relabel a broadcaster's refusal as a local node verdict. The host also supplies
 the fact that a proved competitor spends one of the tracked inputs.
 
 The host supplies `Headers`, `ProofFetcher`, `HintSource` and `Clock`, executes
-scheduled re-asks and reports decoding and check errors. The tracker performs
+scheduled re-asks and reports decoding and check errors. After a chain event a
+host fetches a proof only for a `Reask::Reorg`, the words whose root moved, a
+few a pass; the pacing is the host's, and the recheck that decides which words
+those are is the crate's. The tracker performs
 pure transitions and indexed event handling. It does not fetch proofs, select
 the active header chain or run a script evaluator on the host's behalf.
 
@@ -55,8 +58,10 @@ vocabulary check; `extraInfo` is text kept on `Verdict::reason` and never
 moves the status. A word outside the vocabulary is
 `VerdictError::UnknownStatus`. Every hint, `HintStatus::Mined` included, writes no chain
 word. `HintStatus::MempoolPresent { source }` (0.5.0) records a courier's
-mempool presence, a node the host did not broadcast through holding the bytes;
-it is not a broadcaster word and never promotes a word.
+mempool presence, a node the host did not broadcast through holding the bytes.
+Since 0.7.0 it moves `built` to `announced`, as an acceptance does: someone
+announced the transaction, and the same hint gives the same word whether or
+not this host did. It writes no chain word.
 
 ## Events and records
 
@@ -64,7 +69,14 @@ it is not a broadcaster word and never promotes a word.
 `docs/CHAIN-EVENTS.md` defines the event envelope. `ChainEvent` carries the
 six kinds of envelope version 1 (tip, fork, reorg, invalidated, frozen, tip
 age) and the two kinds of version 2 (`split`, `splitResolved`); each kind
-selects its version. A split marks the mined words at or above its fork height
+selects its version. The reorg rule is by the root (0.7.0): a `mined` word is
+`stale` when, and only when, its stored proof's root is not the active
+header's root at its height in the host's headers. A reorg selects the mined
+words at or above its fork height and an invalidation the words checked
+against its block; each selected word is rechecked against the host's headers,
+a header read and never a fetch. The same root, the word stands and its marks
+clear; a moved root, `Word::Stale` with `Reask::Reorg`; no header, the word
+stands suspect with `Reask::Recheck`. A split marks the mined words at or above its fork height
 suspect and writes no word; a resolved split rechecks them against the host's
 headers. `decode_envelope` returns `UnknownVersion`, `UnknownKind` or
 `UnknownShape` for an envelope it does not know, never a silent tracker input.

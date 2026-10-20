@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.7.0] - 2026-10-20
+
+The reorg rule by the root and the presence hint, rulings (5) and (2) of 2026-10-20 19:4xZ (bsv-stack-lean `docs/RULINGS-2026-10-12.md`; `docs/DECISIONS-2026-10-19.md` sections 8, 8a, 8b). No public type changes; what `Tracker::on_chain` and `State::step` return for the same input does, so a minor.
+
+- The reorg rule by the root: a `mined` word is `stale` when, and only when, its stored proof's root is not the active header's root at its height in the host's headers. A reorg at or below the word's height and an invalidation of its checked header both run the crate's own recheck, a header read and never a fetch. The same root, the word stands and its marks clear; a moved root, `Word::Stale` with `Reask::Reorg { fork_height }` (the reorg's fork height, or the word's height for an invalidation); no header, the word stands suspect with `Reask::Recheck` and the next tip rechecks it. The selection is unchanged (at or above the fork height for a reorg, a fork and a split; the block's hash for an invalidation): it is the bound of the recheck, never the stale mark. Until 0.7.0 a reorg wrote `stale` by the height alone and an invalidation by the hash alone. Forks, splits and resolved splits are unchanged.
+- The presence hint: `HintStatus::MempoolPresent` over `built` moves the word to `announced`, as `Accepted` does (a node we did not broadcast through holds the bytes, so someone announced it; the chain has no author). Over `announced` it leaves `announced`: the same word either way. Until 0.7.0 it left `built` with the hint's re-ask.
+- Tests: `tests/reorg_by_root.rs` (seven); the property `reorg_reasks_at_or_above` restated as `stale_iff_header_inactive`; the tests whose expectation was the height rule now move the root before the event, each with a comment naming the ruling.
+
+Migration for hosts: after a chain event, `Reask::Reorg` means "the root moved, fetch a proof". A host that re-asked every row at or above the fork now re-asks only the rows whose root moved, a few a pass, the pacing the host's; a host's own drain may drop its recheck step (stored root against the active header), which the crate now runs. A host that read a reorg's `stale` without supplying the new branch's headers now sees the word stand; a host whose headers lack the height sees `Reask::Recheck` and a suspect word, never served. A host that matched `built` after a presence hint now sees `announced`.
+
 ## [0.6.0] - 2026-10-18
 
 bsv-rs 0.7.0 (the update loop's PR #14, green on the gate, taken as the base; the wave of 2026-10-18). The crate's public types carry bsv-rs's, so a consumer moves bsv-rs and this crate together: the minor, by the semver note of 0.3.0. No behaviour of the tracker changes; bsv-rs's default signing digest is not on any path of this crate.
