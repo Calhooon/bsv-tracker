@@ -10,7 +10,7 @@
 | `onProof`, line 306 | `State::on_proof`, `Headers::check` | reduce a real SDK path, bind the txid, match the active header, keep it |
 | `onCompetitor`, line 320 | `State::on_competitor` | the host identifies a competing input spend; a mined word stands and re-asks |
 | `recheck`, line 334 | `State::recheck` | matching root clears suspect and the completed trigger, mismatch makes stale, unavailable keeps word |
-| `onReorg`, `onFork`, lines 346, 353 | `State::on_chain` | at-or-above comparison only; reorg clears suspect and records a trigger |
+| `onReorg`, `onFork`, lines 346, 353 | `State::on_chain` | at-or-above comparison bounds the words; a reorg or an invalidation runs `recheck`, stale only when the stored root is not the active header's root (ruling (5), 2026-10-20 19:4xZ) |
 | `onInvalidated`, line 361 | `State::on_chain` | match the checked header hash; keep the old evidence |
 | `onChain`, line 370 | `State::on_chain`, `Tracker::on_chain` | tip touches suspect only; frozen and tipAge move no word |
 | `onVerdict`, line 385 | `State::on_verdict` | mined proof outranks a node's mempool verdict; new competitors precede old ones |
@@ -25,7 +25,7 @@
 
 `mined_implies_checked_proof` checks every prefix of randomized evidence, hint and host traces. A mined word's stored path is for its own txid and height, computes the retained header's merkle root, and has positive depth. The only writing transition constructs both the word and retained record from the same checked capability. This corresponds to the invariant at Lean lines 666-670. It does not establish that the host's header snapshot is the node's active chain.
 
-`reorg_reasks_at_or_above` generates registries containing mined and unmined words at random heights. It compares the indexed result set to the exact affected set, asserts stale plus the reorg trigger for every affected word, and full state equality for every other transaction. This exercises the theorem at lines 676-678, `reorg_spares_below`, `reorg_spares_unmined`, `reorgReask_only` and the bound.
+`stale_iff_header_inactive` (0.7.0, in place of `reorg_reasks_at_or_above`; ruling (5) of 2026-10-20 19:4xZ) generates registries containing mined and unmined words at random heights and a new branch that moves the roots at a random subset of the heights at or above the fork. It compares the indexed result set to the exact at-or-above set, asserts stale plus the reorg trigger for every selected word whose root moved, full state equality for every selected word whose root holds, and full state equality for every other transaction. This exercises `reorg_spares_below`, `reorg_spares_unmined`, `reorgReask_only`, the bound and the stale-by-the-root rule.
 
 `hint_changes_no_chain_word` inserts random hints into random evidence and host traces. It compares chain words, retained evidence and suspect marks before and after each hint, and checks that any changed hint-tier word is one of the three allowed moves. This is the charter's theorem (iii), including the no-new-claim half.
 
