@@ -175,6 +175,10 @@ fn contract_1_versioned_envelope_fails_loud() {
             ..
         }
     ));
+    // The ruling (5) of 2026-10-20 19:4xZ (bsv-stack-lean docs/RULINGS-2026-10-12.md):
+    // a `mined` word is `stale` when, and only when, its stored proof's root is
+    // not the active header's root at its height; the new branch moves it.
+    h.move_root(100, 101);
     step(&mut s, &h, Input::Evidence(Evidence::Chain(reorg(100))));
     assert_eq!(s.word(), &Word::Stale);
 }
@@ -243,6 +247,10 @@ fn contract_3_tracker_word_only_chain_word() {
     assert_eq!(s.word(), &Word::Seen);
     step(&mut s, &h, Input::Evidence(Evidence::Proof(p)));
     mined(&s, 100);
+    // The ruling (5) of 2026-10-20 19:4xZ (bsv-stack-lean docs/RULINGS-2026-10-12.md):
+    // a `mined` word is `stale` when, and only when, its stored proof's root is
+    // not the active header's root at its height; the new branch moves it.
+    h.move_root(100, 101);
     step(&mut s, &h, Input::Evidence(Evidence::Chain(reorg(100))));
     assert_eq!(s.word(), &Word::Stale);
     step(&mut s, &h, hint(HintStatus::Mined { height: 100 }, 5));
@@ -268,6 +276,10 @@ fn contract_4_served_proof_tracker_projection() {
     step(&mut s, &h, Input::Evidence(Evidence::Proof(old)));
     mined(&s, 100);
     let old_header = s.evidence().unwrap().header().clone();
+    // The ruling (5) of 2026-10-20 19:4xZ (bsv-stack-lean docs/RULINGS-2026-10-12.md):
+    // a `mined` word is `stale` when, and only when, its stored proof's root is
+    // not the active header's root at its height; the new branch moves it.
+    h.move_root(100, 101);
     step(&mut s, &h, Input::Evidence(Evidence::Chain(reorg(100))));
     assert_eq!(s.word(), &Word::Stale);
     assert_eq!(s.evidence().unwrap().header(), &old_header);

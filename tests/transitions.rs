@@ -143,6 +143,11 @@ fn fork_tip_recheck_and_invalidation_retain_the_evidence_record() {
         })),
     );
     mined(&s, 10);
+    // The ruling (5) of 2026-10-20 19:4xZ (bsv-stack-lean docs/RULINGS-2026-10-12.md):
+    // a `mined` word is `stale` when, and only when, its stored proof's root is
+    // not the active header's root at its height; the invalidation selects the
+    // word by its checked header, and the host's headers have moved the root.
+    h.move_root(10, 30);
     step(
         &mut s,
         &h,
@@ -333,7 +338,7 @@ fn collection_routes_only_affected_heights_headers_and_suspects() {
             .unwrap();
     }
     tracker.track(hash(5));
-    let h = CountHeaders {
+    let mut h = CountHeaders {
         inner: h,
         lookups: Cell::new(0),
     };
@@ -345,6 +350,11 @@ fn collection_routes_only_affected_heights_headers_and_suspects() {
     let tip_updates = tracker.on_chain(&h, tip(5, 5));
     assert_eq!(tip_updates.len(), 2);
     assert_eq!(h.lookups.get(), 2);
+    // The ruling (5) of 2026-10-20 19:4xZ (bsv-stack-lean docs/RULINGS-2026-10-12.md):
+    // a `mined` word is `stale` when, and only when, its stored proof's root is
+    // not the active header's root at its height. The event selects the words;
+    // the recheck reads one header for each selected word and fetches nothing.
+    h.inner.move_root(2, 22);
     let invalid = tracker.on_chain(
         &h,
         ChainEvent::Invalidated {
@@ -353,9 +363,12 @@ fn collection_routes_only_affected_heights_headers_and_suspects() {
     );
     assert_eq!(invalid.len(), 1);
     assert_eq!(invalid[0].txid, hash(2));
+    assert_eq!(h.lookups.get(), 3);
+    h.inner.move_root(3, 23);
+    h.inner.move_root(4, 24);
     let reorg_updates = tracker.on_chain(&h, reorg(3));
     assert_eq!(reorg_updates.len(), 2);
-    assert_eq!(h.lookups.get(), 2);
+    assert_eq!(h.lookups.get(), 5);
     assert!(tracker.on_chain(&h, reorg(3)).is_empty());
     assert_eq!(tracker.get(&hash(1)).unwrap().word().height(), Some(1));
     assert_eq!(tracker.get(&hash(5)).unwrap().word(), &Word::Unknown);
@@ -431,7 +444,7 @@ fn envelopes_round_trip_and_reject_every_unknown_shape() {
 }
 
 #[test]
-fn a_couriers_mempool_presence_is_a_hint_that_never_promotes() {
+fn a_couriers_mempool_presence_announces_a_built_word_and_writes_no_chain_word() {
     let txid = hash(1);
     let mut h = TestHeaders::default();
     let present = |source: &str, at| {
@@ -443,12 +456,15 @@ fn a_couriers_mempool_presence_is_a_hint_that_never_promotes() {
         )
     };
 
-    // Built: a courier holding the bytes is not a broadcaster's acceptance.
+    // Built: the ruling (2) of 2026-10-20 19:4xZ (bsv-stack-lean
+    // docs/RULINGS-2026-10-12.md): a courier's mempool presence on a `built`
+    // transaction reads `announced`; a node we did not broadcast through
+    // holds the bytes, so someone announced it. The word agrees: no re-ask.
     let mut s = State::new(&txid);
     step(&mut s, &h, Input::Host(HostAction::Build));
     step(&mut s, &h, present("woc", 5));
-    assert_eq!(s.word(), &Word::Built);
-    assert!(matches!(s.reask(), Some(Reask::Hint(_))));
+    assert_eq!(s.word(), &Word::Announced);
+    assert_eq!(s.reask(), None);
     assert_eq!(s.last_hint_at(), Some(5));
     assert_eq!(
         s.hints()[0].status,
@@ -456,6 +472,23 @@ fn a_couriers_mempool_presence_is_a_hint_that_never_promotes() {
             source: "woc".into()
         }
     );
+
+    // The same hint gives the same word whether or not this host announced
+    // the transaction (the ruling (2)'s stronger statement): `announced`
+    // either way, and a second presence over the presence's own `announced`
+    // leaves it there.
+    let announced_by_us = {
+        let mut s = State::new(&txid);
+        step(&mut s, &h, Input::Host(HostAction::Build));
+        step(&mut s, &h, hint(HintStatus::Accepted, 0));
+        step(&mut s, &h, present("woc", 5));
+        s
+    };
+    assert_eq!(announced_by_us.word(), s.word());
+    assert_eq!(announced_by_us.reask(), s.reask());
+    step(&mut s, &h, present("woc", 6));
+    assert_eq!(s.word(), &Word::Announced);
+    assert_eq!(s.reask(), None);
 
     // Announced: it agrees, moves nothing and restarts the age clock.
     let mut s = State::new(&txid);

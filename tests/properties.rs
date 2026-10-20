@@ -156,69 +156,90 @@ fn mined_implies_checked_proof() {
         .unwrap();
 }
 
+// The ruling (5) of 2026-10-20 19:4xZ (bsv-stack-lean docs/RULINGS-2026-10-12.md),
+// theorem `stale_iff_header_inactive` in place of (ii) `reorg_reasks_at_or_above`:
+// a `mined` word is `stale` when, and only when, its stored proof's root is not
+// the active header's root at its height. "At or above the fork point" stays as
+// the bound of the recheck: the reorg selects exactly those words, and only the
+// ones whose root the host's headers moved go stale with `Reask::Reorg`.
 #[test]
-fn reorg_reasks_at_or_above() {
+fn stale_iff_header_inactive() {
     let states = prop::collection::vec((1u32..20, 0u8..5), 1..40);
+    let moved = prop::collection::vec(any::<bool>(), 20);
     runner()
-        .run(&(states, 0u32..22), |(states, fork_height)| {
-            let mut tracker = Tracker::new(params());
-            let mut h = TestHeaders::default();
-            let mut before = vec![];
-            for (n, (height, kind)) in states.into_iter().enumerate() {
-                let txid = hash(n as u64 + 100);
-                tracker.track(&txid);
-                match kind {
-                    0 | 1 => {
-                        let p = proof(&txid, height, 1_000);
-                        h.insert(&p, u64::from(height));
-                        tracker
-                            .apply(&txid, &h, Input::Evidence(Evidence::Proof(p)))
-                            .unwrap();
+        .run(
+            &(states, 0u32..22, moved),
+            |(states, fork_height, moved)| {
+                let mut tracker = Tracker::new(params());
+                let mut h = TestHeaders::default();
+                let mut before = vec![];
+                for (n, (height, kind)) in states.into_iter().enumerate() {
+                    let txid = hash(n as u64 + 100);
+                    tracker.track(&txid);
+                    match kind {
+                        0 | 1 => {
+                            let p = proof(&txid, height, 1_000);
+                            h.insert(&p, u64::from(height));
+                            tracker
+                                .apply(&txid, &h, Input::Evidence(Evidence::Proof(p)))
+                                .unwrap();
+                        }
+                        2 => {
+                            tracker
+                                .apply(&txid, &h, Input::Host(HostAction::Build))
+                                .unwrap();
+                        }
+                        3 => {
+                            tracker
+                                .apply(
+                                    &txid,
+                                    &h,
+                                    Input::Evidence(Evidence::Verdict(NodeVerdict::Rejected {
+                                        reason: "node".into(),
+                                    })),
+                                )
+                                .unwrap();
+                        }
+                        _ => {}
                     }
-                    2 => {
-                        tracker
-                            .apply(&txid, &h, Input::Host(HostAction::Build))
-                            .unwrap();
-                    }
-                    3 => {
-                        tracker
-                            .apply(
-                                &txid,
-                                &h,
-                                Input::Evidence(Evidence::Verdict(NodeVerdict::Rejected {
-                                    reason: "node".into(),
-                                })),
-                            )
-                            .unwrap();
-                    }
-                    _ => {}
+                    before.push(tracker.get(&txid).unwrap().clone());
                 }
-                before.push(tracker.get(&txid).unwrap().clone());
-            }
-            let affected = tracker.on_chain(&h, reorg(fork_height));
-            let expected = before
-                .iter()
-                .filter(|s| s.word().height().is_some_and(|h| h >= fork_height))
-                .count();
-            prop_assert_eq!(affected.len(), expected);
-            prop_assert!(affected.len() <= before.len());
-            for old in before {
-                let after = tracker.get(old.txid()).unwrap();
-                if old.word().height().is_some_and(|h| h >= fork_height) {
-                    prop_assert_eq!(after.word(), &Word::Stale);
-                    let reorg = Reask::Reorg { fork_height };
-                    prop_assert_eq!(after.reask(), Some(&reorg));
-                    prop_assert_eq!(after.evidence(), old.evidence());
-                    prop_assert!(!after.suspect());
+                // The new branch: some heights at or above the fork carry new roots.
+                for height in fork_height.max(1)..20 {
+                    if moved[height as usize] {
+                        h.move_root(height, u64::from(height) + 500);
+                    }
+                }
+                let affected = tracker.on_chain(&h, reorg(fork_height));
+                let expected = before
+                    .iter()
+                    .filter(|s| s.word().height().is_some_and(|h| h >= fork_height))
+                    .count();
+                prop_assert_eq!(affected.len(), expected);
+                prop_assert!(affected.len() <= before.len());
+                for old in before {
+                    let after = tracker.get(old.txid()).unwrap();
+                    let Some(height) = old.word().height().filter(|h| *h >= fork_height) else {
+                        prop_assert_eq!(after, &old);
+                        continue;
+                    };
                     prop_assert!(affected
                         .iter()
                         .any(|u| u.txid == old.txid() && u.result.is_ok()));
-                } else {
-                    prop_assert_eq!(after, &old);
+                    prop_assert_eq!(after.evidence(), old.evidence());
+                    prop_assert!(!after.suspect());
+                    let active = &h.headers[&height].merkle_root;
+                    if active == old.evidence().unwrap().root() {
+                        prop_assert_eq!(after, &old);
+                    } else {
+                        prop_assert_eq!(after.word(), &Word::Stale);
+                        let reorg = Reask::Reorg { fork_height };
+                        prop_assert_eq!(after.reask(), Some(&reorg));
+                    }
                 }
-            }
-            Ok(())
-        })
+                Ok(())
+            },
+        )
         .unwrap();
 }
 

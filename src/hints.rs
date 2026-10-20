@@ -32,9 +32,11 @@ pub enum HintStatus {
     Unknown,
     /// A courier holds the transaction in a mempool (bsv-stack-lean #93): a
     /// node the host did not broadcast through returned its bytes, unmined.
-    /// It is not a broadcaster's word: it never promotes `built` to
-    /// `announced` or `seen`, writes no chain word and touches no evidence.
-    /// It agrees with an `announced` or `seen` word and, as every hint does,
+    /// Someone announced it, since the chain has no author, so it moves
+    /// `built` to `announced` as a broadcaster's acceptance does (ruling (2),
+    /// bsv-stack-lean docs/RULINGS-2026-10-12.md, 2026-10-20 19:4xZ); it never
+    /// writes `seen` or a chain word and touches no evidence. It agrees with an
+    /// `announced` or `seen` word and, as every hint does,
     /// restarts the age clock, so the age re-ask falls due `age_threshold`
     /// after the last presence; against any other word it schedules the
     /// hint's re-ask. [`Verdict::into_hint`] never produces it.

@@ -276,6 +276,13 @@ fn pinned_reorg_keeps_the_inclusive_height_routing_and_evidence_record() {
             .unwrap();
         saved.push(tracker.get(&txid).unwrap().evidence().cloned());
     }
+    // The ruling (5) of 2026-10-20 19:4xZ (bsv-stack-lean docs/RULINGS-2026-10-12.md):
+    // a `mined` word is `stale` when, and only when, its stored proof's root is
+    // not the active header's root at its height. The pinned reorg deactivates
+    // 101 and its new tip is 102, so the host's headers carry new roots there;
+    // the height routing stays the bound of the recheck.
+    headers.move_root(101, 201);
+    headers.move_root(102, 202);
     let updates = tracker.on_chain(&headers, event.clone());
     assert_eq!(
         updates.iter().map(|u| u.txid.clone()).collect::<Vec<_>>(),
