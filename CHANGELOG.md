@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+bsv-rs 0.8.0 (Calhooon/bsv-rs #71; the wave of Calhooon/bsv-wallet-cli #44). `Cargo.toml` declares `bsv-rs = "0.8.0"` by caret, the same features; the committed lock carries one bsv-rs, 0.8.0. The crate's public types carry bsv-rs's, so a consumer moves bsv-rs and this crate together: the minor, by the semver note of 0.3.0. bsv-rs 0.8.0 makes its `Error` `#[non_exhaustive]` and adds `Error::WalletBusy`; this crate matches no bsv-rs error (a path that does not reduce is `CheckError::InvalidProof` with the error's text), so no verdict, no word and no re-ask moves.
+
 ## [0.7.0] - 2026-10-20
 
 The reorg rule by the root and the presence hint, rulings (5) and (2) of 2026-10-20 19:4xZ (bsv-stack-lean `docs/RULINGS-2026-10-12.md`; `docs/DECISIONS-2026-10-19.md` sections 8, 8a, 8b). No public type changes; what `Tracker::on_chain` and `State::step` return for the same input does, so a minor.

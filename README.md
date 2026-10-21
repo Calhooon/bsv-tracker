@@ -1,8 +1,9 @@
 # bsv-tracker
 
-**0.7.0**, a transaction evidence state machine on **bsv-rs ^0.7**. The tag
-`v0.7.0` is the release of record, and crates.io carries the same version,
-0.7.0; the repository's Releases page has a Release for each tag.
+**0.7.0**, a transaction evidence state machine; `main` is on **bsv-rs ^0.8**
+for the next release, and the tag `v0.7.0`, on bsv-rs ^0.7, is the release of
+record. crates.io carries the same version, 0.7.0; the repository's Releases
+page has a Release for each tag.
 
 The tracker owns re-asking: per transaction it keeps a word, the evidence
 behind it, the hints received and the next re-ask. Checked headers and proofs
