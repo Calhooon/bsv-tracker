@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.9.0-beta.1] - 2026-10-26
+
+A prerelease cut from `beta` on bsv-rs 0.9.0-beta.1, the pin of bsv-wallet-toolbox-rs 0.14.0-beta.1 and bsv-wallet-cli's beta line, so a consumer pinning both takes one bsv-rs and this crate's `MerklePath` is theirs. `Cargo.toml` declares `bsv-rs = "=0.9.0-beta.1"` exactly (a caret requirement admits no prerelease), the same features; the committed lock carries one bsv-rs, 0.9.0-beta.1. Never merged into `main` as a prerelease.
+
+- No code change: the crate builds, tests, lints and builds for wasm32 and at the MSRV against bsv-rs 0.9.0-beta.1 as it stood. bsv-rs's `Kind` and `Reason` turn `#[non_exhaustive]` (bsv-rs `CHANGELOG.md:310`, `:330` at `v0.9.0-beta.1`); this crate imports neither, nor the BEEF reader nor a certificate type: its only bsv-rs items are `MerklePath`, `MerklePathLeaf`, `MerklePath::new_unchecked` and `compute_root` (`src/evidence.rs:3`, `:77-80`, `:104-106`; `src/compact.rs:34`, `:450`).
+- `.github/workflows/ci.yml`: the gate runs on pull requests into, and pushes to, `main` and `beta` (it ran on `main` alone, so a pull request into `beta` ran no checks).
+- `.github/workflows/release.yml`: a tag whose version holds a `-` (a prerelease) must be on `beta`, any other on `main`, as bsv-rs's `release.yml` at `v0.9.0-beta.1` checks its line ("The tagged commit is on its line").
+
+### Notes: cross-SDK parity
+
+The even-offset duplicate is observed here: bsv-rs 0.9.0-beta.1's `MerklePath::new_unchecked` refuses a duplicate leaf (flag `01`) at an even offset, `Duplicate at an even offset: N, at height: N` (bsv-rs `CHANGELOG.md:1433` at `v0.9.0-beta.1`; `src/transaction/merkle_path.rs:204`, `src/transaction/beef/in_memory.rs:131-141`), and `compute_root` computes no node from a left duplicate (`merkle_path.rs:704-710`). Through bsv-rs 0.8.0 the walk hashed an empty left hash there. So `Proof::new` (`src/evidence.rs:77-80`) returns `CheckError::InvalidProof` for such a path, and `State::from_compact` returns `CompactError::Evidence` for a stored proof holding one (`src/compact.rs:138`); bsv-rs records no writer and no corpus BUMP of that shape, and TS gives up there too. The BEEF reader's order tolerance and `DuplicateOffset` are not observed: this crate reads no BEEF and no BUMP bytes (its compact form builds the `MerklePath` struct itself, `src/compact.rs:432-459`), and matches no bsv-rs kind.
+
 ## [0.8.0] - 2026-10-21
 
 bsv-rs 0.8.0 (Calhooon/bsv-rs #71; the wave of Calhooon/bsv-wallet-cli #44). `Cargo.toml` declares `bsv-rs = "0.8.0"` by caret, the same features; the committed lock carries one bsv-rs, 0.8.0. The crate's public types carry bsv-rs's, so a consumer moves bsv-rs and this crate together: the minor, by the semver note of 0.3.0. bsv-rs 0.8.0 makes its `Error` `#[non_exhaustive]` and adds `Error::WalletBusy`; this crate matches no bsv-rs error (a path that does not reduce is `CheckError::InvalidProof` with the error's text), so no verdict, no word and no re-ask moves.
