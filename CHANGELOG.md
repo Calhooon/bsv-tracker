@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.9.0-beta.2] - 2026-10-28
+
+### Changed: the pin to bsv-rs 0.9.0-beta.2
+
+- `bsv-rs = "=0.9.0-beta.2"` (the beta pin of the toolbox and the CLI); no code change: this crate uses the `transaction` feature alone and calls no wallet method, so #329 (the originator as `Option`) and #331 (the verifier's memory budget) do not reach it.
+
 ## [0.9.0-beta.1] - 2026-10-26
 
 A prerelease cut from `beta` on bsv-rs 0.9.0-beta.1, the pin of bsv-wallet-toolbox-rs 0.14.0-beta.1 and bsv-wallet-cli's beta line, so a consumer pinning both takes one bsv-rs and this crate's `MerklePath` is theirs. `Cargo.toml` declares `bsv-rs = "=0.9.0-beta.1"` exactly (a caret requirement admits no prerelease), the same features; the committed lock carries one bsv-rs, 0.9.0-beta.1. Never merged into `main` as a prerelease.
