@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.9.0-beta.3] - 2026-10-28
+
+### Changed: the pin to bsv-rs 0.9.0-beta.3
+
+- `bsv-rs = "=0.9.0-beta.3"` (the beta pin of the toolbox and the CLI); no code change: this crate uses the `transaction` feature alone and calls no wallet method, so beta.3's wallet-client, validator and default-script-mode changes do not reach it; `Transaction::verify`'s signature is beta.2's.
+
 ## [0.9.0-beta.2] - 2026-10-28
 
 ### Changed: the pin to bsv-rs 0.9.0-beta.2
