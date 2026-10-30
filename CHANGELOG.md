@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.9.0-beta.4] - 2026-10-30
+
+### Changed: the pin to bsv-rs 0.9.0-beta.4
+
+- `bsv-rs = "=0.9.0-beta.4"` (the beta pin of the toolbox and the CLI); no code change: this crate uses the `transaction` feature alone and calls no wallet method, so beta.4's wallet, auth and wire changes do not reach it; the additive verify methods and the typed not-judged class leave this crate's call as beta.3's (confirmed by cargo check at the pin).
+
 ## [0.9.0-beta.3] - 2026-10-28
 
 ### Changed: the pin to bsv-rs 0.9.0-beta.3
