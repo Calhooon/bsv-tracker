@@ -6,7 +6,10 @@ use std::fmt;
 ///
 /// `#[non_exhaustive]` (the room made before 0.9.0, bsv-stack-lean
 /// `docs/DECISIONS-2026-10-19.md` 28.8.1 (c)): a later minor may add a kind,
-/// so a host's match outside this crate carries a wildcard arm.
+/// so a host's match outside this crate carries a wildcard arm. A hint status
+/// is stored by its serde form and read back by it, never mapped by hand, and
+/// a status the reader refuses is surfaced, never read as
+/// [`HintStatus::Unknown`].
 ///
 /// ```compile_fail,E0004
 /// use bsv_tracker::HintStatus;

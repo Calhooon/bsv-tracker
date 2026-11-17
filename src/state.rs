@@ -146,7 +146,8 @@ pub enum Input {
 ///
 /// `#[non_exhaustive]` (bsv-stack-lean `docs/DECISIONS-2026-10-19.md`
 /// 28.8.1 (c)): a later minor may add a kind, so a host's match outside this
-/// crate carries a wildcard arm.
+/// crate carries a wildcard arm. A re-ask of a kind the host does not name is
+/// kept and surfaced by [`Reask::label`], never dropped by a wildcard arm.
 ///
 /// ```compile_fail,E0004
 /// use bsv_tracker::Reask;

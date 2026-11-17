@@ -64,6 +64,21 @@ Since 0.7.0 it moves `built` to `announced`, as an acceptance does: someone
 announced the transaction, and the same hint gives the same word whether or
 not this host did. It writes no chain word.
 
+## Kinds a later release adds
+
+`HostAction`, `Reask`, `HintStatus`, `VerdictError` and `Verdict` are
+`#[non_exhaustive]`: a later minor may add a kind, an error or a field, so a
+host's match on one of the four enums carries a wildcard arm, and a host
+builds a `Verdict` with `Verdict::new` and assigns its fields after it. That
+arm keeps and surfaces what the host does not name. A re-ask of a kind the
+host does not name is kept and surfaced by `Reask::label`, never dropped by a
+wildcard arm. A hint status is stored by its serde form
+(`{"status":"mined","height":900}`) and read back by it, never mapped by hand,
+and a status the reader refuses is surfaced, never read as
+`HintStatus::Unknown`. Each kind's word (`label`, and `LABELS` for every word
+in declaration order, the compact form's tag order) never changes and is
+never reused; a later minor only appends.
+
 ## Events and records
 
 `docs/SPEC.md` records the specification relationship and
