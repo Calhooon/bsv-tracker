@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.9.0-beta.8] - 2026-11-17
+
+### Changed: the pin to bsv-rs 0.9.0-beta.8
+
+- `bsv-rs = "=0.9.0-beta.8"` (the beta pin of the toolbox and the CLI). No code change: this crate names `bsv_rs::transaction::MerklePath` and `MerklePathLeaf` alone (it builds a path, computes its root and reads its height), and none of bsv-rs 0.9.0-beta.8's ten breaking changes reaches a call here. The one that names `MerklePath`, its writers `to_binary`, `to_hex` and `to_writer` returning `Result` (bsv-rs #817), meets no call: this crate writes a path through its own compact form. Read at the pin, each as `ci.yml` runs it: `cargo test --locked` (64 passed, 0 failed), the documentation, Clippy with `-D warnings`, the two vector steps, the wasm32 build, and `cargo deny`.
+
+### Security
+
+- bsv-rs 0.9.0-beta.8 is the prerelease of the 0.9.0 line that carries the stable line's advisory fixes (bsv-rs 0.8.5 through 0.8.11); the advisories name every earlier prerelease. This crate calls none of the doors they name: through bsv-rs it reads no transaction, BEEF, signature, certificate or Extended Format bytes. The pin matters to its consumers: the toolbox and the CLI pin bsv-rs exactly and a build holds one bsv-rs, so they reach the patched prerelease only with a tracker that pins it.
+
+### Hosts
+
+- A host that writes a proof's path with bsv-rs's own writers (`proof.path().to_hex()`, `proof.path().to_binary()`) adds `?` at bsv-rs 0.9.0-beta.8 (bsv-rs #817). This crate's types, verdicts and compact form do not move.
+
 ## [0.9.0-beta.7] - 2026-11-04
 
 ### Changed: the pin to bsv-rs 0.9.0-beta.7
