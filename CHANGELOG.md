@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+Room for the three rows of the rulings of 2026-11-17 (bsv-stack-lean `docs/RULINGS-2026-10-12.md`, 16:1xZ; `docs/DECISIONS-2026-10-19.md` 28.8.1 (c) with its three additions, and the keeper's reading of 17:1xZ for `VerdictError`): finality (#45), the status code (#46) and `conflicted` keeping its proof (#47) land after the 0.9.0 cut as minors, each behind its Lean, and none of them is built here. Five public types turn `#[non_exhaustive]`, so a host's exhaustive `match` on `HostAction`, `Reask`, `HintStatus` or `VerdictError`, and a `Verdict` built by literal, stop compiling: a break on this line, by the semver note of 0.3.0. No behaviour moves: every test of the base keeps its name and its answer, and the compact bytes are unchanged, pinned by `tests/compact_golden.rs`, which landed on the base before any other change.
+
+### Changed
+
+- `#[non_exhaustive]` on the enums `HostAction`, `Reask`, `HintStatus` and `VerdictError` and on the struct `Verdict`: the type alone, no variant marked, `Verdict`'s four fields still public to read and to assign. A `compile_fail` doctest on each pins the break (E0004 for a match outside the crate, E0639 for the literal).
+
+### Added
+
+- `Verdict::new(status)`: a verdict holding the word as given (not trimmed, not checked), with no height, no reason and no competitors; the fields are assigned after it, and `Verdict::from_arc_body` stays the checked reader.
+- `HintStatus::label` and `Reask::label`: each kind's stable word, the payload not in it (`accepted`, `seen`, `mined`, `stale_block`, `rejected`, `double_spend`, `orphan_mempool`, `unknown`, `mempool_present`; `reorg`, `fork`, `hint`, `proof_failed`, `recheck`, `age`, `spend`). `HintStatus::LABELS` and `Reask::LABELS`: every word in declaration order, which is the compact form's tag order. A word never changes and is never reused; a later minor only appends.
+- The serde form of `HintStatus`, the crate's stored form of a status: internally tagged by its word under `status`, the payload beside it as `height`, `reason`, `competitors` (left out when empty) and `courier` (`MempoolPresent`'s `source`), so `{"status":"mined","height":900}`. A word this release does not know, and a kind whose payload is missing, are refused, never read as `Unknown`. `Reask` has the words alone; `Hint`, `Verdict` and `HostAction` have no serde.
+- Tests: `tests/compact_golden.rs` (the compact bytes of ten states that hold every word, a checked proof, every status with and without a verdict and every re-ask), `tests/labels.rs` (the words, both lists, every status's text round-tripped, the refusals, and the host's shape below), and two unit tests that `LABELS[i]` is the word of the kind the compact writer tags `i`.
+
+### Hosts
+
+- A match on `HostAction`, `Reask`, `HintStatus` or `VerdictError` gains a wildcard arm that keeps and surfaces what the host does not name: a re-ask by `Reask::label`, an error as the fault it is. Never an arm that maps to `HintStatus::Unknown` or drops the value.
+- A `Verdict` built by literal becomes `Verdict::new(status)` with its other fields assigned after it.
+- A host that stores hints stores the serde form of `HintStatus` and reads it back by it, never by a hand map, and surfaces a status the reader refuses.
+- bsv-wallet-cli's stored rows read as they are: a struct with the status flattened between `source` and `observed` reads every text its `StoredHint::of` writes (beta at 108f80e) and writes it back identical (`tests/labels.rs`). Its pin of the next prerelease replaces its two hand maps with these words.
+
 ## [0.9.0-beta.8] - 2026-11-17
 
 ### Changed: the pin to bsv-rs 0.9.0-beta.8

@@ -544,7 +544,7 @@ mod tests {
     use super::Writer;
     use crate::{Hint, HintStatus, Reask};
 
-    /// The tag the compact writer gives a status, read from its first byte.
+    /// The tag the compact writer gives a status, read from its leading byte.
     fn status_tag(status: &HintStatus) -> usize {
         let mut w = Writer(Vec::new());
         w.status(status);
