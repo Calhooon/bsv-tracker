@@ -104,7 +104,24 @@ pub enum Evidence {
     Recheck,
 }
 /// Acts supplied by the host, including its clock and spend guard.
+///
+/// `#[non_exhaustive]` (bsv-stack-lean `docs/DECISIONS-2026-10-19.md`
+/// 28.8.1 (c)): a later minor may add an act, so a host's match outside this
+/// crate carries a wildcard arm.
+///
+/// ```compile_fail,E0004
+/// use bsv_tracker::HostAction;
+/// fn kind(action: &HostAction) -> u8 {
+///     match action {
+///         HostAction::Build => 0,
+///         HostAction::Abandon => 1,
+///         HostAction::SpendAttempt => 2,
+///         HostAction::Tick(_) => 3,
+///     }
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum HostAction {
     /// The host built the transaction.
     Build,
@@ -126,7 +143,27 @@ pub enum Input {
     Host(HostAction),
 }
 /// A value for the host to execute; the crate never fetches anything.
+///
+/// `#[non_exhaustive]` (bsv-stack-lean `docs/DECISIONS-2026-10-19.md`
+/// 28.8.1 (c)): a later minor may add a kind, so a host's match outside this
+/// crate carries a wildcard arm.
+///
+/// ```compile_fail,E0004
+/// use bsv_tracker::Reask;
+/// fn kind(reask: &Reask) -> u8 {
+///     match reask {
+///         Reask::Reorg { .. } => 0,
+///         Reask::Fork { .. } => 1,
+///         Reask::Hint(_) => 2,
+///         Reask::ProofFailed { .. } => 3,
+///         Reask::Recheck => 4,
+///         Reask::Age => 5,
+///         Reask::Spend => 6,
+///     }
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Reask {
     /// The root moved: the active header at the mined height no longer
     /// carries the stored proof's root, so the word is stale; fetch a fresh

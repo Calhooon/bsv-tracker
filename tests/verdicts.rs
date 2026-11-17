@@ -98,33 +98,22 @@ fn arcade_twelve_words_and_reorg_markers_remain_hints() {
         "MINED",
         "IMMUTABLE",
     ] {
-        let verdict = Verdict {
-            status: word.into(),
-            height: Some(10),
-            reason: None,
-            competitors: vec![],
-        };
+        let mut verdict = Verdict::new(word);
+        verdict.height = Some(10);
         let mut s = State::new(hash(1));
         step(&mut s, &h, Input::Host(HostAction::Build));
         step(&mut s, &h, Input::Hint(verdict.into_hint("Arcade", 10)));
         assert_eq!(s.word().chain(), None, "{word}");
         assert_eq!(s.evidence(), None);
     }
-    let unmine = Verdict {
-        status: "SEEN_ON_NETWORK".into(),
-        height: None,
-        reason: Some("reorg_unmined".into()),
-        competitors: vec![],
-    }
-    .into_hint("Arcade", 10);
+    let mut unmine = Verdict::new("SEEN_ON_NETWORK");
+    unmine.reason = Some("reorg_unmined".into());
+    let unmine = unmine.into_hint("Arcade", 10);
     // 0.4.1 (bsv-stack-lean #169): only the status words name a stale block.
     assert_eq!(unmine.status, HintStatus::Seen);
-    let reanchor = Verdict {
-        status: "MINED".into(),
-        height: Some(11),
-        reason: Some("reorg_reanchor".into()),
-        competitors: vec![],
-    }
-    .into_hint("Arcade", 11);
+    let mut reanchor = Verdict::new("MINED");
+    reanchor.height = Some(11);
+    reanchor.reason = Some("reorg_reanchor".into());
+    let reanchor = reanchor.into_hint("Arcade", 11);
     assert_eq!(reanchor.status, HintStatus::Mined { height: 11 });
 }
