@@ -6,7 +6,8 @@
 
 ### Changed: the pin to bsv-rs 0.9.0-beta.8
 
-- `bsv-rs = "=0.9.0-beta.8"` (the beta pin of the toolbox and the CLI). No code change: this crate names `bsv_rs::transaction::MerklePath` and `MerklePathLeaf` alone (it builds a path, computes its root and reads its height), and none of bsv-rs 0.9.0-beta.8's ten breaking changes reaches a call here. The one that names `MerklePath`, its writers `to_binary`, `to_hex` and `to_writer` returning `Result` (bsv-rs #817), meets no call: this crate writes a path through its own compact form. Read at the pin, each as `ci.yml` runs it: `cargo test --locked` (64 passed, 0 failed), the documentation, Clippy with `-D warnings`, the two vector steps, the wasm32 build, and `cargo deny`.
+- `bsv-rs = "=0.9.0-beta.8"` (the beta pin of the toolbox and the CLI). No source line of this crate changes: it names `bsv_rs::transaction::MerklePath` and `MerklePathLeaf` alone (it builds a path, computes its root and reads its height), and none of bsv-rs 0.9.0-beta.8's ten breaking changes reaches a call here. The one that names `MerklePath`, its writers `to_binary`, `to_hex` and `to_writer` returning `Result` (bsv-rs #817), meets no call: this crate writes a path through its own compact form. Read at the pin as `ci.yml` runs it: `cargo test --locked` (64 passed, 0 failed), the documentation, Clippy with `-D warnings`, the two vector steps and the wasm32 build; and, outside `ci.yml`, `cargo deny` 0.20.2 (advisories, bans, licenses and sources ok).
+- One answer of this crate moves with the pin. bsv-rs #817 also changes the merkle walk behind `MerklePath::new_unchecked` and `compute_root`, which `Proof::new` and `Proof::root` call: a path whose walk pairs a hash holding a character that is not hex is now refused at the constructor, `CheckError::InvalidProof` (bsv-rs's `Invalid hex string`). Through 0.9.0-beta.7 bsv-rs dropped that side of the pair, so `Proof::new` answered `Ok` and the header check answered `RootMismatch` (or `Unavailable`), which sets `Reask::ProofFailed`. `State::from_compact` builds its proof through the same constructor, so a stored path of that shape is refused there in the same class (read, not run). A sibling that is hex of another length is still paired, as the reference concatenates it, and reduces to a root that the well-formed proof of the txid does not have. No word moves: such a path reached neither `Mined` nor `Conflicted` before, and reaches neither now. `tests/transitions.rs` (`malformed_sdk_paths_are_rejected_before_root_reduction`) pins the refusal and the other-length pairing.
 
 ### Security
 
@@ -14,7 +15,9 @@
 
 ### Hosts
 
-- A host that writes a proof's path with bsv-rs's own writers (`proof.path().to_hex()`, `proof.path().to_binary()`) adds `?` at bsv-rs 0.9.0-beta.8 (bsv-rs #817). This crate's types, verdicts and compact form do not move.
+- A host that writes a proof's path with bsv-rs's own writers (`proof.path().to_hex()`, `proof.path().to_binary()`) adds `?` at bsv-rs 0.9.0-beta.8 (bsv-rs #817).
+- A host that builds a path by hand (the public fields, a provider's text hashes) and hands it to `Proof::new`: a sibling that is not hex is refused there with `CheckError::InvalidProof`, before any step, so this crate sets no `Reask::ProofFailed` for it; the host treats the refusal as it treats any malformed proof. Through 0.9.0-beta.7 the same path was built and failed at the header check.
+- This crate's types, words and compact bytes do not move.
 
 ## [0.9.0-beta.7] - 2026-11-04
 

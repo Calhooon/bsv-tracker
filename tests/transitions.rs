@@ -8,7 +8,7 @@
     clippy::panic
 )]
 mod common;
-use bsv_rs::transaction::MerklePath;
+use bsv_rs::transaction::{MerklePath, MerklePathLeaf};
 use bsv_tracker::*;
 use common::*;
 use std::cell::Cell;
@@ -77,6 +77,36 @@ fn malformed_sdk_paths_are_rejected_before_root_reduction() {
     }
     assert!(Proof::new("not a txid", MerklePath::from_coinbase_txid(&txid, 1)).is_err());
     assert!(Proof::new(hash(2), MerklePath::from_coinbase_txid(&txid, 1)).is_err());
+    // bsv-rs 0.9.0-beta.8 (#817): a walk that pairs a hash holding a character
+    // that is not hex is refused, where 0.9.0-beta.7 dropped that side of the
+    // pair. The path is an invalid proof at the constructor and reaches no
+    // header check.
+    let with_sibling = |sibling: String| MerklePath {
+        block_height: 1,
+        path: vec![vec![
+            MerklePathLeaf::new_txid(0, txid.clone()),
+            MerklePathLeaf::new(1, sibling),
+        ]],
+    };
+    assert!(matches!(
+        Proof::new(&txid, with_sibling("zz".repeat(32))),
+        Err(CheckError::InvalidProof(_))
+    ));
+    // A sibling that is hex of another length is paired as bsv-rs pairs it
+    // (the reference's concatenation): the path reduces, to a root the
+    // well-formed proof of the txid does not have, so a true header answers
+    // RootMismatch for it and no word moves.
+    let good = Proof::new(&txid, with_sibling(hash(2)))
+        .unwrap()
+        .root()
+        .unwrap();
+    for sibling in [hash(2)[..63].to_string(), "ab".repeat(31)] {
+        let root = Proof::new(&txid, with_sibling(sibling))
+            .unwrap()
+            .root()
+            .unwrap();
+        assert_ne!(root, good);
+    }
 }
 
 #[test]
