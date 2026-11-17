@@ -538,3 +538,65 @@ fn raw_id(s: &str) -> Option<[u8; 32]> {
     }
     Some(raw)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Writer;
+    use crate::{Hint, HintStatus, Reask};
+
+    /// The tag the compact writer gives a status, read from its first byte.
+    fn status_tag(status: &HintStatus) -> usize {
+        let mut w = Writer(Vec::new());
+        w.status(status);
+        usize::from(w.0[0])
+    }
+    fn reask_tag(reask: &Reask) -> usize {
+        let mut w = Writer(Vec::new());
+        w.reask(reask);
+        usize::from(w.0[0])
+    }
+
+    #[test]
+    fn hint_status_labels_are_the_compact_tag_order() {
+        let every = [
+            HintStatus::Accepted,
+            HintStatus::Seen,
+            HintStatus::Mined { height: 1 },
+            HintStatus::StaleBlock,
+            HintStatus::Rejected { reason: "r".into() },
+            HintStatus::DoubleSpend {
+                competitors: vec![],
+            },
+            HintStatus::OrphanMempool,
+            HintStatus::Unknown,
+            HintStatus::MempoolPresent { source: "c".into() },
+        ];
+        assert_eq!(every.len(), HintStatus::LABELS.len());
+        let mut tags: Vec<usize> = every.iter().map(status_tag).collect();
+        for status in &every {
+            assert_eq!(HintStatus::LABELS[status_tag(status)], status.label());
+        }
+        tags.sort_unstable();
+        assert_eq!(tags, (0..HintStatus::LABELS.len()).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn reask_labels_are_the_compact_tag_order() {
+        let every = [
+            Reask::Reorg { fork_height: 1 },
+            Reask::Fork { height: 1 },
+            Reask::Hint(Hint::new("s", HintStatus::Accepted, 0)),
+            Reask::ProofFailed { height: 1 },
+            Reask::Recheck,
+            Reask::Age,
+            Reask::Spend,
+        ];
+        assert_eq!(every.len(), Reask::LABELS.len());
+        let mut tags: Vec<usize> = every.iter().map(reask_tag).collect();
+        for reask in &every {
+            assert_eq!(Reask::LABELS[reask_tag(reask)], reask.label());
+        }
+        tags.sort_unstable();
+        assert_eq!(tags, (0..Reask::LABELS.len()).collect::<Vec<_>>());
+    }
+}

@@ -1,5 +1,5 @@
 use crate::{Height, Timestamp, TxId};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// A broadcaster's claim reduced to the Lean hint vocabulary.
@@ -24,7 +24,22 @@ use std::fmt;
 ///     }
 /// }
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// **The stored form.** The serde form below is this crate's stored form of
+/// a status: an object whose key `status` holds the kind's word
+/// ([`HintStatus::label`]) and whose payload sits beside it under its
+/// field's name: `height` for `mined`, `reason` for `rejected`,
+/// `competitors` for `double_spend` (left out when there are none) and
+/// `courier` for `mempool_present` (the courier that answered, so a status
+/// sits beside a hint's own `source` in one object). So
+/// `{"status":"accepted"}`, `{"status":"mined","height":900}` and
+/// `{"status":"mempool_present","courier":"c"}`. The reader refuses a word it
+/// does not know and a kind whose payload is missing; it never reads either
+/// as [`HintStatus::Unknown`]. The tag key, the words and the field names are
+/// stable under the rule of [`HintStatus::LABELS`]: a word never changes and
+/// is never reused, and a later minor only appends.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum HintStatus {
     /// The broadcaster accepted the transaction.
@@ -46,6 +61,7 @@ pub enum HintStatus {
     /// The broadcaster reports a double spend.
     DoubleSpend {
         /// The competing txids the broadcaster names.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         competitors: Vec<TxId>,
     },
     /// The broadcaster reports the transaction in its orphan mempool.
@@ -64,8 +80,42 @@ pub enum HintStatus {
     /// hint's re-ask. [`Verdict::into_hint`] never produces it.
     MempoolPresent {
         /// The courier that answered the presence (the host's name for it).
+        /// Its stored form's field is `courier`.
+        #[serde(rename = "courier")]
         source: String,
     },
+}
+impl HintStatus {
+    /// Every kind's word, in declaration order, which is the order of the
+    /// compact form's status tags (tag `i` is `LABELS[i]`). A word never
+    /// changes and is never reused; a later minor only appends.
+    pub const LABELS: &'static [&'static str] = &[
+        "accepted",
+        "seen",
+        "mined",
+        "stale_block",
+        "rejected",
+        "double_spend",
+        "orphan_mempool",
+        "unknown",
+        "mempool_present",
+    ];
+    /// The kind's stable word, the payload not in it: `mined` for
+    /// `Mined { height: 900 }`. It is the `status` of the stored form.
+    #[must_use]
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::Seen => "seen",
+            Self::Mined { .. } => "mined",
+            Self::StaleBlock => "stale_block",
+            Self::Rejected { .. } => "rejected",
+            Self::DoubleSpend { .. } => "double_spend",
+            Self::OrphanMempool => "orphan_mempool",
+            Self::Unknown => "unknown",
+            Self::MempoolPresent { .. } => "mempool_present",
+        }
+    }
 }
 /// An observed hint, carrying its source and host supplied time.
 #[derive(Clone, Debug, PartialEq, Eq)]
