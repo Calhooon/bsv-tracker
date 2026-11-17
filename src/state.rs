@@ -195,6 +195,34 @@ pub enum Reask {
     /// The host is about to spend; recheck before it does.
     Spend,
 }
+impl Reask {
+    /// Every kind's word, in declaration order, which is the order of the
+    /// compact form's re-ask tags (tag `i` is `LABELS[i]`). A word never
+    /// changes and is never reused; a later minor only appends.
+    pub const LABELS: &'static [&'static str] = &[
+        "reorg",
+        "fork",
+        "hint",
+        "proof_failed",
+        "recheck",
+        "age",
+        "spend",
+    ];
+    /// The kind's stable word, the payload not in it: `reorg` for
+    /// `Reorg { fork_height: 10 }`, `hint` for any `Hint(_)`.
+    #[must_use]
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Reorg { .. } => "reorg",
+            Self::Fork { .. } => "fork",
+            Self::Hint(_) => "hint",
+            Self::ProofFailed { .. } => "proof_failed",
+            Self::Recheck => "recheck",
+            Self::Age => "age",
+            Self::Spend => "spend",
+        }
+    }
+}
 /// Host selected scheduling parameters.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Params {
