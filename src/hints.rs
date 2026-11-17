@@ -3,7 +3,29 @@ use serde::Deserialize;
 use std::fmt;
 
 /// A broadcaster's claim reduced to the Lean hint vocabulary.
+///
+/// `#[non_exhaustive]` (the room made before 0.9.0, bsv-stack-lean
+/// `docs/DECISIONS-2026-10-19.md` 28.8.1 (c)): a later minor may add a kind,
+/// so a host's match outside this crate carries a wildcard arm.
+///
+/// ```compile_fail,E0004
+/// use bsv_tracker::HintStatus;
+/// fn kind(status: &HintStatus) -> u8 {
+///     match status {
+///         HintStatus::Accepted => 0,
+///         HintStatus::Seen => 1,
+///         HintStatus::Mined { .. } => 2,
+///         HintStatus::StaleBlock => 3,
+///         HintStatus::Rejected { .. } => 4,
+///         HintStatus::DoubleSpend { .. } => 5,
+///         HintStatus::OrphanMempool => 6,
+///         HintStatus::Unknown => 7,
+///         HintStatus::MempoolPresent { .. } => 8,
+///     }
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum HintStatus {
     /// The broadcaster accepted the transaction.
     Accepted,
@@ -70,7 +92,23 @@ impl Hint {
     }
 }
 /// Raw broadcaster metadata. HTTP acceptance is not chain evidence.
+///
+/// `#[non_exhaustive]` (bsv-stack-lean `docs/DECISIONS-2026-10-19.md`
+/// 28.8.1 (c)): a later minor may add a field, so a host outside this crate
+/// builds one with [`Verdict::new`] and assigns the fields after it; the
+/// four fields stay public to read and to assign.
+///
+/// ```compile_fail,E0639
+/// use bsv_tracker::Verdict;
+/// let _ = Verdict {
+///     status: "SEEN_ON_NETWORK".into(),
+///     height: None,
+///     reason: None,
+///     competitors: vec![],
+/// };
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Verdict {
     /// The `txStatus` word, trimmed and upper-cased by [`Verdict::from_arc_body`].
     pub status: String,
@@ -82,6 +120,19 @@ pub struct Verdict {
     pub competitors: Vec<TxId>,
 }
 impl Verdict {
+    /// A verdict holding `status` as given, not trimmed and not checked, with
+    /// no height, no reason and no competitors. A host assigns the other
+    /// fields after it. [`Verdict::from_arc_body`] stays the checked reader
+    /// of a broadcaster's body; this constructor checks nothing.
+    #[must_use]
+    pub fn new(status: impl Into<String>) -> Self {
+        Self {
+            status: status.into(),
+            height: None,
+            reason: None,
+            competitors: Vec::new(),
+        }
+    }
     /// Read an ARC body as metadata, checking its echoed txid and the bounded
     /// status vocabulary at bsv-rs@7bc623c. HTTP status is never consulted.
     ///
@@ -243,7 +294,25 @@ impl Verdict {
 }
 
 /// An invalid broadcaster body is a reported fault, never chain evidence.
+///
+/// `#[non_exhaustive]` (bsv-stack-lean `docs/DECISIONS-2026-10-19.md`
+/// 28.8.1 (c), the keeper's reading of 2026-11-17 17:1xZ): a later minor's
+/// reader may add a variant, so a host's match outside this crate carries a
+/// wildcard arm that reports the fault.
+///
+/// ```compile_fail,E0004
+/// use bsv_tracker::VerdictError;
+/// fn kind(error: &VerdictError) -> u8 {
+///     match error {
+///         VerdictError::Shape(_) => 0,
+///         VerdictError::TxidMismatch => 1,
+///         VerdictError::InvalidMetadata => 2,
+///         VerdictError::UnknownStatus(_) => 3,
+///     }
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum VerdictError {
     /// The expected fields cannot be decoded.
     Shape(String),
