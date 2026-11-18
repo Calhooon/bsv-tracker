@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.9.0-beta.10] - 2026-11-18
+
+The pin to bsv-rs 0.9.0-beta.10, bsv-rs's security prerelease, so that the toolbox's and the CLI's beta lines can follow onto it through this crate. No behaviour moves and no public item changes: every test of the base keeps its name and its answer, the compact bytes are unchanged (`tests/compact_golden.rs`), and a host changes nothing at this prerelease.
+
+### Changed: the pin to bsv-rs 0.9.0-beta.10
+
+- `bsv-rs = "=0.9.0-beta.10"` (the beta pin the toolbox and the CLI follow onto). No source line of this crate changes for it and no answer of this crate moves: it names `bsv_rs::transaction::MerklePath` and `MerklePathLeaf` alone (it builds a path, computes its root and reads its height), and bsv-rs's `src/transaction/merkle_path.rs` is byte for byte the same in 0.9.0-beta.9 and 0.9.0-beta.10; between the two packages bsv-rs's `src` moves only in its key-value store (`kvstore/global.rs`, `kvstore/interpreter.rs`), a module behind bsv-rs's `kvstore` feature, which this crate does not turn on (it asks for `transaction`, and for `wasm` under its own `wasm` feature). bsv-rs 0.9.0-beta.10 states no breaking change since 0.9.0-beta.9. Read at the pin as `ci.yml` runs it: `cargo test --locked` (87 passed, 0 failed, each test of the base by the same name and the same answer, `tests/compact_golden.rs` unchanged), the documentation, rustfmt, Clippy with `-D warnings`, the two vector steps, the wasm32 build and the check at 1.88; and, outside `ci.yml`, `cargo deny` 0.20.2 (advisories, bans, licenses and sources ok).
+
+### Security
+
+- bsv-rs 0.9.0-beta.10 carries the fix of GHSA-j4w5-4g84-q3f4 (Medium, CVSS 3.1 5.3), which names every prerelease through 0.9.0-beta.9. In the advisory's words: "`GlobalKVStore::query`, `get_by_controller` and `get_by_tags` send the caller's selector ... to the overlay lookup resolver and return the resolver's answer to the caller without re-checking the selector on the client side", and the fix: "`query_overlay`, the single path every read door and the existing-token lookup share, now drops a decoded entry that does not satisfy the query's key, controller (compared case-insensitively), protocol (App-namespace-aware) or tags (all/any mode) before it is returned". This crate does not reach those reads: through bsv-rs it builds a merkle path and reduces it to a root, and it calls no key-value store (`src` and `tests` name no `kvstore`, `GlobalKVStore` or `query_overlay`; their five `bsv_rs::` lines name `MerklePath` and `MerklePathLeaf` alone), and the `kvstore` module is not compiled in its build. The pin matters to this crate's consumers: the toolbox and the CLI pin bsv-rs exactly and a build holds one bsv-rs, so they reach the patched prerelease only with a tracker that pins it.
+
 ## [0.9.0-beta.9] - 2026-11-17
 
 Room for the three rows of the rulings of 2026-11-17 (bsv-stack-lean `docs/RULINGS-2026-10-12.md`, 16:1xZ; `docs/DECISIONS-2026-10-19.md` 28.8.1 (c) with its three additions, and the keeper's reading of 17:1xZ for `VerdictError`): finality (#45), the status code (#46) and `conflicted` keeping its proof (#47) land after the 0.9.0 cut as minors, each behind its Lean, and none of them is built here. Five public types turn `#[non_exhaustive]`, so a host's exhaustive `match` on `HostAction`, `Reask`, `HintStatus` or `VerdictError`, and a `Verdict` built by literal, stop compiling: a break on this line, by the semver note of 0.3.0. No behaviour moves: every test of the base keeps its name and its answer, and the compact bytes are unchanged, pinned by `tests/compact_golden.rs`, which landed on the base before any other change.
