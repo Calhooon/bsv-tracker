@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added: the doubts' state and reducer (for #51)
+
+- `bsv_tracker::doubts`, a new public module beside the tracker's reducer: a host's doubts, folded from the header service's feed one row at a time. It mirrors `lean/Headers/Doubts.lean` of bsv-stack-lean at `7213ef4a` under the Lean's names. Nothing is re-exported at the crate root, and no existing item, serde form or compact byte moves: `State`, `Tracker`, `Params`, `ChainEvent`, the decoder and `tests/compact_golden.rs` are untouched, and a host changes nothing until it calls the module.
+- `Rival` (`fork`, `tip`; `Rival::new`, `covers`, `merge`), `Doubts` (the kept rivals, the open splits' fork heights, the feed's tip and the summary of what the prune dropped; `Doubts::new`, `Doubts::cold`, the readers `rivals`, `splits`, `tip`, `gone`, and `held`) and `Bounds` (`settled`; `Bounds::new`, `Bounds::B400`, the feed's settled line). `Rival` and `Bounds` are `#[non_exhaustive]`; `Doubts` keeps its fields private.
+- `raw(event, ds)` (the table of rows, no prune), `prune(bounds, ds)`, `step(bounds, event, ds)` (`raw`, then `prune`) and `run(bounds, ds, rows)` (`step` folded from the left). They take the decoded `ChainEvent` a host already holds, take and return values, and read a row's heights alone: no header, clock, hash, root or chain work. A `splitResolved` row closes every open split at its fork height and its key is not read, as the Lean's does.
+- The stored form of `Doubts`, its serde text, with the fields in the Lean's order and under the Lean's names: `{"rivals":[{"fork":101,"tip":101}],"splits":[],"tip":103,"gone":null}`. All four fields are required on read, `gone` included (`null` or a rival: a text without it is refused, never read as "nothing dropped"), and a field this reader does not know is refused. `Bounds` has no serde. The compact format stays one transaction's and stays at version 1.
+- `Display` for `Doubts`: `tip=103 splits=[] rivals=[101:101] summary=-`, the lists in their order, the summary as `fork:tip` or `-`.
+- Tests: `tests/vectors/doubts/rows_of_record.json` (53 cases taken from the `#guard` rows of `lean/Headers/Doubts.lean` section 8 and `lean/Headers/Host.lean` section 11 at `7213ef4a`; no journal row) and `tests/doubts_rows.rs`: `rows_of_record_states` (every case's printed state after its last row, 53 counted), `stored_form_round_trips` and `stored_form_refuses`. The file's `asks` are for the depth functions, which are not in this change. The CI job `vectors` runs `rows_of_record_states` by name and counts its pass.
+
 ## [0.9.0-beta.10] - 2026-11-18
 
 The pin to bsv-rs 0.9.0-beta.10, bsv-rs's security prerelease, so that the toolbox's and the CLI's beta lines can follow onto it through this crate. No behaviour moves and no public item changes: every test of the base keeps its name and its answer, the compact bytes are unchanged (`tests/compact_golden.rs`), and a host changes nothing at this prerelease.
