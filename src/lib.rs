@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 mod compact;
+pub mod doubts;
 mod events;
 mod evidence;
 mod hints;

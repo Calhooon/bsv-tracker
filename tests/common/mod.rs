@@ -130,6 +130,71 @@ pub fn split_resolved(fork_height: u32) -> ChainEvent {
         fork_height,
     }
 }
+// The rows of the doubts' reducer, mirrors of the helpers of bsv-stack-lean's
+// lean/Headers/Doubts.lean section 8 at 7213ef4a (`tipRow`, `forkRow`,
+// `reorgRow`) and of the split rows of lean/Headers/Host.lean section 11. They
+// build values and pass no decoder; the reducer reads their heights alone.
+/// The Lean's `tipRow h`.
+pub fn tip_row(h: u32) -> ChainEvent {
+    tip(h, u64::from(h))
+}
+/// The Lean's `forkRow f t n`: forking at `f`, the served tip at `t`, then
+/// the competitor at `n`.
+pub fn fork_row(f: u32, t: u32, n: u32) -> ChainEvent {
+    ChainEvent::Fork {
+        height: f,
+        competing_tips: [
+            event_header(t, u64::from(t)),
+            event_header(n, u64::from(n) + 10_000),
+        ],
+        depth: (t + 1).saturating_sub(f),
+    }
+}
+/// The Lean's `reorgRow fh old nt`: the headers from `old` down to `fh`
+/// removed, the new tip at `nt`.
+pub fn reorg_row(fh: u32, old: u32, nt: u32) -> ChainEvent {
+    ChainEvent::Reorg {
+        fork_height: fh,
+        depth: (old + 1).saturating_sub(fh),
+        deactivated_headers: (fh..=old)
+            .rev()
+            .map(|h| event_header(h, u64::from(h)))
+            .collect(),
+        new_tip: event_header(nt, u64::from(nt) + 20_000),
+    }
+}
+/// The Lean's `.reorg fh 0 [] (evAt nt)`: a reorg that names no removed
+/// header. Built by hand: the decoder refuses a depth of 0.
+pub fn reorg_none(fh: u32, nt: u32) -> ChainEvent {
+    ChainEvent::Reorg {
+        fork_height: fh,
+        depth: 0,
+        deactivated_headers: Vec::new(),
+        new_tip: event_header(nt, u64::from(nt) + 20_000),
+    }
+}
+/// A split at fork height `fh` with witness tips at `h1` and `h2`. The key
+/// is `split:` and `hash(fh)`, which no rule of the doubts reads.
+pub fn split_row(fh: u32, h1: u32, h2: u32) -> ChainEvent {
+    let tip = |block: u64, height: u32, rung: &str| SplitTip {
+        hash: hash(block),
+        height,
+        chain_work: hash(u64::from(height) + 1),
+        rungs: vec![rung.into()],
+    };
+    ChainEvent::Split {
+        key: format!("split:{}", hash(u64::from(fh))),
+        fork_height: fh,
+        tips: [tip(300, h1, "woc"), tip(301, h2, "arcade")],
+    }
+}
+/// The `splitResolved` row at fork height `fh`, under `split_row`'s key.
+pub fn resolved_row(fh: u32) -> ChainEvent {
+    ChainEvent::SplitResolved {
+        key: format!("split:{}", hash(u64::from(fh))),
+        fork_height: fh,
+    }
+}
 pub fn mined(s: &State, height: u32) {
     assert_eq!(s.word().height(), Some(height), "word: {:?}", s.word());
     let evidence = s.evidence().unwrap();

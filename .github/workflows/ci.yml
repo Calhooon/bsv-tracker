@@ -143,6 +143,13 @@ jobs:
             arc_p0_2_twenty_bodies_are_only_hints | tee verdicts.out
           grep -q '^test result: ok. 1 passed; 0 failed; 0 ignored' verdicts.out
 
+      # tests/vectors/doubts/rows_of_record.json
+      - name: The doubts' rows of record
+        run: |
+          cargo test --locked --test doubts_rows -- --exact \
+            rows_of_record_states | tee doubts_rows.out
+          grep -q '^test result: ok. 1 passed; 0 failed; 0 ignored' doubts_rows.out
+
   # The wallet, the overlay engine and the app layer host this crate in wasm.
   wasm32:
     runs-on: ubuntu-latest
