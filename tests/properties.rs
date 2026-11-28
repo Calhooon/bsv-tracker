@@ -1,6 +1,12 @@
 //! Four randomized statements named for the Lean theorems they exercise.
 //! 256 reproducible traces per theorem, using an explicit ChaCha seed and no
 //! failure persistence, network, clock or storage.
+//!
+//! The traces draw the tracked transaction (`Subject`: a txid alone, or bytes
+//! of 63, 64, 65 or 191, born measured or from its txid), its own proofs by
+//! either constructor at a length that agrees with it or not, and the measure
+//! act at random places (GHSA-jjhc-7hvh-c3hm, BRC-237); the length rule's own
+//! statements are `tests/length_properties.rs`.
 // The lint bar binds the library; a test may unwrap, and its fixtures fail loudly
 // (bsv-stack-lean #134).
 #![allow(
@@ -26,10 +32,16 @@ fn runner() -> TestRunner {
     )
 }
 
-fn trace() -> impl Strategy<Value = Vec<(u8, u32, u64, u8, u8)>> {
-    prop::collection::vec(
-        (0u8..16, 1u32..12, 20u64..40, any::<u8>(), any::<u8>()),
-        1..80,
+/// A subject's kind and its acts: code, height, sibling and two noises.
+type Trace = (u8, Vec<(u8, u32, u64, u8, u8)>);
+
+fn trace() -> impl Strategy<Value = Trace> {
+    (
+        any::<u8>(),
+        prop::collection::vec(
+            (0u8..17, 1u32..12, 20u64..40, any::<u8>(), any::<u8>()),
+            1..80,
+        ),
     )
 }
 
@@ -65,12 +77,37 @@ fn host(code: u8, observed: u64) -> Input {
     })
 }
 
+/// An input of the machine, or (`None`) the measure act, which is a method
+/// of the state and no input (the plan's K12).
+fn act(
+    s: &mut State,
+    subject: &Subject,
+    h: &TestHeaders,
+    a: Option<Input>,
+) -> Result<(), CheckError> {
+    match a {
+        Some(i) => s.step(&params(), h, i),
+        None => subject.measure(s),
+    }
+}
+
 /// Each step supplies exactly one immutable snapshot, as in Tracker.Trace.
-fn input(h: &mut TestHeaders, code: u8, height: u32, sibling: u64) -> Input {
+/// The subject's own proof takes the road `road` names (`Subject::own`).
+fn input(
+    h: &mut TestHeaders,
+    subject: &Subject,
+    code: u8,
+    height: u32,
+    sibling: u64,
+    road: u8,
+) -> Option<Input> {
     h.fault = false;
-    let own = proof(&hash(1), height, sibling);
+    if code == 16 {
+        return None;
+    }
+    let own = subject.own(height, sibling, road);
     let other = competitor(2, height, sibling);
-    Input::Evidence(match code {
+    Some(Input::Evidence(match code {
         0 => {
             h.insert(&own, u64::from(height));
             Evidence::Proof(own)
@@ -103,7 +140,7 @@ fn input(h: &mut TestHeaders, code: u8, height: u32, sibling: u64) -> Input {
         }),
         10 => Evidence::Chain(ChainEvent::Frozen {
             outpoint: Outpoint {
-                txid: hash(1),
+                txid: subject.txid.clone(),
                 vout: 0,
             },
         }),
@@ -125,18 +162,19 @@ fn input(h: &mut TestHeaders, code: u8, height: u32, sibling: u64) -> Input {
             h.fault = true;
             Evidence::Recheck
         }
-    })
+    }))
 }
 
 #[test]
 fn mined_implies_checked_proof() {
     runner()
-        .run(&trace(), |trace| {
-            let mut s = State::new(hash(1));
+        .run(&trace(), |(kind, trace)| {
+            let subject = Subject::of(kind);
+            let mut s = subject.state();
             let mut h = TestHeaders::default();
             for (code, height, sibling, noise, time) in trace {
-                let i = input(&mut h, code, height, sibling);
-                let _ = s.step(&params(), &h, i);
+                let a = input(&mut h, &subject, code, height, sibling, noise);
+                let _ = act(&mut s, &subject, &h, a);
                 step(&mut s, &h, status(noise, height, u64::from(time)));
                 step(&mut s, &h, host(noise, u64::from(time)));
                 if let Word::Mined(mined) = s.word() {
@@ -149,6 +187,7 @@ fn mined_implies_checked_proof() {
                         checked.header().merkle_root.clone()
                     );
                     prop_assert!(checked.depth() >= 1);
+                    prop_assert!(s.tx_len() != Some(AMBIGUOUS_TX_LEN));
                 }
             }
             Ok(())
@@ -174,11 +213,25 @@ fn stale_iff_header_inactive() {
                 let mut h = TestHeaders::default();
                 let mut before = vec![];
                 for (n, (height, kind)) in states.into_iter().enumerate() {
-                    let txid = hash(n as u64 + 100);
-                    tracker.track(&txid);
+                    // Kind 0 is mined on a stated length; kind 1 is tracked
+                    // from its bytes and mined by a proof built from them;
+                    // kind 4 is tracked from 64 bytes, which take no proof.
+                    let n = n as u64 + 100;
+                    let bytes = match kind {
+                        1 => Some(tx_bytes(n, 191)),
+                        4 => Some(tx_bytes(n, 64)),
+                        _ => None,
+                    };
+                    let txid = match &bytes {
+                        Some(b) => tracker.track_bytes(b).unwrap().txid().to_owned(),
+                        None => tracker.track(hash(n)).txid().to_owned(),
+                    };
                     match kind {
                         0 | 1 => {
-                            let p = proof(&txid, height, 1_000);
+                            let p = match &bytes {
+                                Some(b) => proof_of(b, height, 1_000),
+                                None => proof(&txid, height, 1_000),
+                            };
                             h.insert(&p, u64::from(height));
                             tracker
                                 .apply(&txid, &h, Input::Evidence(Evidence::Proof(p)))
@@ -200,7 +253,15 @@ fn stale_iff_header_inactive() {
                                 )
                                 .unwrap();
                         }
-                        _ => {}
+                        _ => {
+                            let p =
+                                Proof::with_stated_len(&txid, 63, path_of(&txid, height, 1_000))
+                                    .unwrap();
+                            h.insert(&p, u64::from(height));
+                            let refused =
+                                tracker.apply(&txid, &h, Input::Evidence(Evidence::Proof(p)));
+                            prop_assert_eq!(refused, Err(CheckError::AmbiguousLength));
+                        }
                     }
                     before.push(tracker.get(&txid).unwrap().clone());
                 }
@@ -246,18 +307,20 @@ fn stale_iff_header_inactive() {
 #[test]
 fn hint_changes_no_chain_word() {
     runner()
-        .run(&trace(), |trace| {
-            let mut s = State::new(hash(1));
+        .run(&trace(), |(kind, trace)| {
+            let subject = Subject::of(kind);
+            let mut s = subject.state();
             let mut h = TestHeaders::default();
             for (code, height, sibling, noise, time) in trace {
-                let i = input(&mut h, code, height, sibling);
-                let _ = s.step(&params(), &h, i);
+                let a = input(&mut h, &subject, code, height, sibling, noise);
+                let _ = act(&mut s, &subject, &h, a);
                 step(&mut s, &h, host(noise, u64::from(time)));
                 let before = s.clone();
                 step(&mut s, &h, status(noise, height, u64::from(time)));
                 prop_assert_eq!(s.word().chain(), before.word().chain());
                 prop_assert_eq!(s.evidence(), before.evidence());
                 prop_assert_eq!(s.suspect(), before.suspect());
+                prop_assert_eq!(s.tx_len(), before.tx_len());
                 if s.word() != before.word() {
                     prop_assert!(matches!(
                         (before.word(), s.word()),
@@ -273,19 +336,22 @@ fn hint_changes_no_chain_word() {
 #[test]
 fn same_evidence_same_word() {
     runner()
-        .run(&trace(), |trace| {
-            let mut a = State::new(hash(1));
+        .run(&trace(), |(kind, trace)| {
+            let subject = Subject::of(kind);
+            let mut a = subject.state();
             let mut b = a.clone();
             let mut h = TestHeaders::default();
             for (code, height, sibling, noise_a, noise_b) in trace {
-                let i = input(&mut h, code, height, sibling);
+                // One road for both: the evidence is the same.
+                let i = input(&mut h, &subject, code, height, sibling, noise_a ^ noise_b);
                 step(&mut a, &h, status(noise_a, height, u64::from(noise_a)));
                 step(&mut b, &h, status(noise_b, height, u64::from(noise_b)));
                 step(&mut a, &h, host(noise_a, u64::from(noise_a)));
                 step(&mut b, &h, host(noise_b, u64::from(noise_b)));
-                let result_a = a.step(&params(), &h, i.clone());
-                let result_b = b.step(&params(), &h, i);
+                let result_a = act(&mut a, &subject, &h, i.clone());
+                let result_b = act(&mut b, &subject, &h, i);
                 prop_assert_eq!(result_a, result_b);
+                prop_assert_eq!(a.tx_len(), b.tx_len());
                 prop_assert_eq!(a.word().chain(), b.word().chain());
                 prop_assert_eq!(a.evidence(), b.evidence());
                 prop_assert_eq!(a.suspect(), b.suspect());

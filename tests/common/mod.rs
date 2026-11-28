@@ -269,3 +269,78 @@ pub fn announce(s: &mut State, h: &TestHeaders) {
     step(s, h, hint(HintStatus::Seen, 1));
     assert_eq!(s.word(), &Word::Seen);
 }
+/// The lengths a generator draws a tracked transaction at: either side of
+/// 64, 64 itself, and the helpers' 191.
+pub const SUBJECT_LENS: [usize; 4] = [63, 64, 65, 191];
+/// A tracked transaction a generator draws: a txid alone (`hash(1)`, nobody
+/// has its bytes), or `tx_bytes(1, len)` for a length of `SUBJECT_LENS`, born
+/// measured (`State::measured`) or born from its txid (`State::new`).
+#[derive(Clone, Debug)]
+pub struct Subject {
+    pub txid: String,
+    pub bytes: Option<Vec<u8>>,
+    pub born_measured: bool,
+}
+impl Subject {
+    /// Nine kinds: 0 the txid alone; 1 to 4 bytes born measured; 5 to 8
+    /// bytes born from the txid.
+    pub fn of(kind: u8) -> Self {
+        match kind % 9 {
+            0 => Self {
+                txid: hash(1),
+                bytes: None,
+                born_measured: false,
+            },
+            k => {
+                let bytes = tx_bytes(1, SUBJECT_LENS[usize::from((k - 1) % 4)]);
+                Self {
+                    txid: txid_of(&bytes),
+                    bytes: Some(bytes),
+                    born_measured: k <= 4,
+                }
+            }
+        }
+    }
+    /// The state at its birth.
+    pub fn state(&self) -> State {
+        match &self.bytes {
+            Some(b) if self.born_measured => State::measured(b),
+            _ => State::new(&self.txid),
+        }
+    }
+    /// Its length: the count of its bytes, or `STATED_LEN` for a txid alone.
+    pub fn len(&self) -> u64 {
+        self.bytes.as_ref().map_or(STATED_LEN, |b| b.len() as u64)
+    }
+    /// A length a host that lies could state for it: never 64, never its own.
+    pub fn lie(&self) -> u64 {
+        if self.len() == 63 {
+            65
+        } else {
+            63
+        }
+    }
+    /// Its own proof by one of three roads (`road % 3`): built from its
+    /// bytes, stated at its length, or stated at `lie()`. A road no
+    /// constructor takes (no bytes, or 64 by either) falls to the stated one
+    /// at its length, then to the lie, so a proof is always built.
+    pub fn own(&self, height: u32, sibling: u64, road: u8) -> Proof {
+        let path = || path_of(&self.txid, height, sibling);
+        let from_bytes = || self.bytes.as_ref().and_then(|b| Proof::new(b, path()).ok());
+        let stated = |len| Proof::with_stated_len(&self.txid, len, path()).ok();
+        match road % 3 {
+            0 => from_bytes().or_else(|| stated(self.len())),
+            1 => stated(self.len()),
+            _ => None,
+        }
+        .or_else(|| stated(self.lie()))
+        .unwrap()
+    }
+    /// The measure act: hand its bytes to the state, if it has any.
+    pub fn measure(&self, s: &mut State) -> Result<(), CheckError> {
+        match &self.bytes {
+            Some(b) => s.measure(b),
+            None => Ok(()),
+        }
+    }
+}

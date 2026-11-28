@@ -386,6 +386,106 @@ fn abandoned() {
     );
 }
 
+/// The bytes of `twin`, a state born from the same txid without its bytes
+/// and stepped alike, with the last field, the length, set to `len`: a
+/// measured state writes its measure and nothing else differently, since a
+/// record's proof carries no length of its own.
+fn twin_with_len(twin: &State, len: &str) -> String {
+    let bytes = hex(&twin.to_compact());
+    assert!(bytes.ends_with("00"));
+    format!("{}{len}", &bytes[..bytes.len() - 2])
+}
+
+fn measured_unknown_state() -> State {
+    let s = State::measured(&tx_bytes(7, 191));
+    assert_eq!(s.tx_len(), Some(191));
+    s
+}
+
+/// A state born from 191 bytes (GHSA-jjhc-7hvh-c3hm, BRC-237): the length
+/// field `01bf01`, `1` and the varint of 191.
+#[test]
+fn measured_unknown() {
+    let s = measured_unknown_state();
+    golden("measured unknown", &s, "0200b6e3a84fc06807f96d27157287a75224f798e2f6794a1d30c87e89831119c10900000000000000000001bf01");
+    assert_eq!(
+        hex(&s.to_compact()),
+        twin_with_len(&State::new(s.txid()), "01bf01")
+    );
+}
+
+fn measured_at_64_state() -> State {
+    let h = TestHeaders::default();
+    let mut s = State::measured(&tx_bytes(7, 64));
+    step(&mut s, &h, Input::Host(HostAction::Build));
+    assert_eq!(s.tx_len(), Some(AMBIGUOUS_TX_LEN));
+    assert_eq!(s.word(), &Word::Built);
+    s
+}
+
+/// A state born from 64 bytes and built: it holds no proof, and its length
+/// field `0140` is read back (a length of 64 is refused only beside a stored
+/// proof).
+#[test]
+fn measured_at_64() {
+    let s = measured_at_64_state();
+    golden("measured at 64", &s, "02007f6b1704291f5737873289b74532e49ee69189da7be08ef24ea46c8e777698b70100000000000000000140");
+    let mut twin = State::new(s.txid());
+    step(
+        &mut twin,
+        &TestHeaders::default(),
+        Input::Host(HostAction::Build),
+    );
+    assert_eq!(hex(&s.to_compact()), twin_with_len(&twin, "0140"));
+}
+
+/// A state born from its txid and mined by a proof built from its 191
+/// bytes, which measures it; and its twin, born alike and mined by the same
+/// path on a stated length, which does not.
+fn mined_measured_by_its_proof_states() -> (State, State) {
+    let raw = tx_bytes(7, 191);
+    let txid = txid_of(&raw);
+    let p = proof_of(&raw, 10, 2);
+    let mut h = TestHeaders::default();
+    h.insert(&p, 10);
+    let mut s = State::new(&txid);
+    step(&mut s, &h, Input::Evidence(Evidence::Proof(p)));
+    assert_eq!(s.tx_len(), Some(191));
+    mined(&s, 10);
+    let mut twin = State::new(&txid);
+    step(
+        &mut twin,
+        &h,
+        Input::Evidence(Evidence::Proof(proof(&txid, 10, 2))),
+    );
+    assert_eq!(twin.tx_len(), None);
+    (s, twin)
+}
+
+/// The measure written by the proof door, and the record beside it, which
+/// carries no length: the bytes are the stated twin's but for the last field.
+#[test]
+fn mined_measured_by_its_proof() {
+    let (s, twin) = mined_measured_by_its_proof_states();
+    golden(
+        "mined measured by its proof",
+        &s,
+        concat!(
+            "0200b6e3a84fc06807f96d27157287a75224f798e2f6794a1d30c87e89831119c109040100b6e3a8",
+            "4fc06807f96d27157287a75224f798e2f6794a1d30c87e89831119c1090a0102000600b6e3a84fc0",
+            "6807f96d27157287a75224f798e2f6794a1d30c87e89831119c10901040000000000000000000000",
+            "00000000000000000000000000000000000000000002000000000000000000000000000000000000",
+            "00000000000000000000000000000a00521ffa4666f49e7dec12f90a7fc7070c7bbf044a2ef556f4",
+            "92c5e396bc3f71b500521ffa4666f49e7dec12f90a7fc7070c7bbf044a2ef556f492c5e396bc3f71",
+            "b5010000000000000001bf01",
+        ),
+    );
+    assert_eq!(hex(&s.to_compact()), twin_with_len(&twin, "01bf01"));
+    let restored = State::from_compact(&s.to_compact()).unwrap();
+    assert_eq!(restored.tx_len(), Some(191));
+    assert_eq!(restored.evidence(), s.evidence());
+}
+
 /// The ten states of record with the version 1 bytes each wrote up to
 /// 0.9.0-beta.11, verbatim. They are the reader's record and never move: a
 /// version 1 row a host stored still restores.

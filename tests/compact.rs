@@ -65,9 +65,9 @@ fn status(code: u8, height: u32, n: u64) -> Hint {
     Hint::new(format!("source-{code}"), status, n)
 }
 
-fn input(h: &mut TestHeaders, code: u8, height: u32, n: u64) -> Input {
+fn input(h: &mut TestHeaders, subject: &Subject, code: u8, height: u32, n: u64) -> Input {
     h.fault = false;
-    let own = proof(&hash(1), height, n);
+    let own = subject.own(height, n, (n >> 3) as u8);
     let other = competitor(2, height, n);
     match code % 14 {
         0 | 1 => {
@@ -96,22 +96,33 @@ fn input(h: &mut TestHeaders, code: u8, height: u32, n: u64) -> Input {
     }
 }
 
-/// A state reached by a random trace, so every field is one the machine writes.
-fn states() -> impl Strategy<Value = Vec<(u8, u32, u64, u8)>> {
-    prop::collection::vec(
-        (any::<u8>(), 1u32..300_000, 0u64..1 << 40, any::<u8>()),
-        0..40,
+/// A state reached by a random trace, so every field is one the machine
+/// writes: the birth (`Subject`: a txid alone, or bytes of 63, 64, 65 or 191,
+/// born measured or from the txid), the subject's own proofs by either
+/// constructor at a length that agrees or not, and the measure act at random
+/// places (GHSA-jjhc-7hvh-c3hm, BRC-237).
+fn states() -> impl Strategy<Value = (u8, Vec<(u8, u32, u64, u8)>)> {
+    (
+        any::<u8>(),
+        prop::collection::vec(
+            (any::<u8>(), 1u32..300_000, 0u64..1 << 40, any::<u8>()),
+            0..40,
+        ),
     )
 }
 
-fn build(trace: Vec<(u8, u32, u64, u8)>) -> State {
-    let mut s = State::new(hash(1));
+fn build(kind: u8, trace: Vec<(u8, u32, u64, u8)>) -> State {
+    let subject = Subject::of(kind);
+    let mut s = subject.state();
     let mut h = TestHeaders::default();
     for (code, height, n, hint) in trace {
-        let i = input(&mut h, code, height, n);
+        let i = input(&mut h, &subject, code, height, n);
         let _ = s.step(&params(), &h, i);
         if hint % 3 == 0 {
             let _ = s.step(&params(), &h, Input::Hint(status(hint, height, n)));
+        }
+        if hint % 7 == 1 {
+            let _ = subject.measure(&mut s);
         }
     }
     s
@@ -120,12 +131,24 @@ fn build(trace: Vec<(u8, u32, u64, u8)>) -> State {
 #[test]
 fn compact_round_trip_over_256_random_states() {
     let mined = Cell::new(0);
+    let (measured_mined, at_64, unmeasured) = (Cell::new(0), Cell::new(0), Cell::new(0));
     runner()
-        .run(&states(), |trace| {
-            let s = build(trace);
+        .run(&states(), |(kind, trace)| {
+            let s = build(kind, trace);
             let bytes = s.to_compact();
             prop_assert_eq!(bytes[0], COMPACT_VERSION);
             let restored = State::from_compact(&bytes).unwrap();
+            match s.tx_len() {
+                None => unmeasured.set(unmeasured.get() + 1),
+                Some(AMBIGUOUS_TX_LEN) => {
+                    at_64.set(at_64.get() + 1);
+                    prop_assert!(s.evidence().is_none());
+                }
+                Some(_) if matches!(s.word(), Word::Mined(_)) => {
+                    measured_mined.set(measured_mined.get() + 1)
+                }
+                Some(_) => {}
+            }
             if let Word::Mined(m) = s.word() {
                 mined.set(mined.get() + 1);
                 // The word and its record come back; the recheck falls due.
@@ -137,6 +160,7 @@ fn compact_round_trip_over_256_random_states() {
                 prop_assert_eq!(restored.hints(), s.hints());
                 prop_assert_eq!(restored.last_hint_at(), s.last_hint_at());
                 prop_assert_eq!(restored.txid(), s.txid());
+                prop_assert_eq!(restored.tx_len(), s.tx_len());
             } else {
                 prop_assert_eq!(&restored, &s);
                 prop_assert_eq!(restored.to_compact(), bytes);
@@ -148,18 +172,43 @@ fn compact_round_trip_over_256_random_states() {
             Ok(())
         })
         .unwrap();
-    // Both arms run: the generator reaches mined words and every other kind.
+    // Both arms run: the generator reaches mined words and every other kind,
+    // and measured states of each kind of length field.
     assert!((1..256).contains(&mined.get()), "mined: {}", mined.get());
+    for (what, n) in [
+        ("measured mined", measured_mined.get()),
+        ("measured at 64", at_64.get()),
+        ("unmeasured", unmeasured.get()),
+    ] {
+        assert!(n > 0, "{what}: none");
+    }
 }
 
 #[test]
 fn every_proper_prefix_is_truncated_and_a_suffix_is_trailing() {
-    let s = build(vec![
-        (9, 10, 5, 0),
-        (13, 10, 9, 3),
-        (0, 10, 7, 0),
-        (10, 10, 7, 1),
-    ]);
+    // Over the generator: every birth, measured or not, and every length
+    // field (a prefix that ends inside its varint included).
+    runner()
+        .run(&states(), |(kind, trace)| {
+            let bytes = build(kind, trace).to_compact();
+            for n in 0..bytes.len() {
+                prop_assert_eq!(
+                    State::from_compact(&bytes[..n]),
+                    Err(CompactError::Truncated),
+                    "prefix {}",
+                    n
+                );
+            }
+            let mut long = bytes;
+            long.push(0);
+            prop_assert_eq!(State::from_compact(&long), Err(CompactError::TrailingBytes));
+            Ok(())
+        })
+        .unwrap();
+    let s = build(
+        0,
+        vec![(9, 10, 5, 0), (13, 10, 9, 3), (0, 10, 7, 0), (10, 10, 7, 1)],
+    );
     assert!(matches!(s.word(), Word::Mined(_)));
     let bytes = s.to_compact();
     for n in 0..bytes.len() {
