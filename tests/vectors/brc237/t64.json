@@ -1,0 +1,14 @@
+{
+  "schema": "bsv-tracker-brc237-vector/1",
+  "source": "BRC-237 (bsv-blockchain/BRCs, transactions/0237.md at e135188ec8bcfee3688b1f03efbfe2e2f6b14b87): the transaction T64 of the transactions' table, its BRC-74 path of the paths' table and the header at its height of the headers' table",
+  "rule": "a transaction of exactly 64 bytes is never taken as proven by a merkle path (BRC-237 section 1, the anchor's condition (d))",
+  "name": "T64",
+  "raw_tx": "010000000103254c9167ae1de0add271e079a00da53b5e54e6da92dffabb1ada240222f576000000000451515151ffffffff01a0860100000000000000000000",
+  "tx_len": 64,
+  "txid": "6444bf849ea4136a9608b60996cc7d552d65d94c7183ae4f71a678add2de1e02",
+  "height": 950008,
+  "path": "fef87e0e00020200006d3fb11936809e8c6d535c14e7e0304784119ed357a597f04322ec9a87ab32ce0102021eded2ad78a6714fae83714cd9652d557dcc9609b608966a13a49e84bf44640101009646af07feb89e59967f6e9ea43d9e5782f5c6a8d8a1de59403acc15765c86cd",
+  "header": "00000020db33bd7315d4ef959509491271cc0b733345aa322986b6b3490dea926cc036a02bbbf06acfeea203c81dc858f5b9f865eda979478e7b1b2a70660212ad8e411ba812df6affff7f2000000000",
+  "block_hash": "cd2ccdbacf490cb9b574720989e69c3a427159e3059b85fcadc6d1b04d5ed86f",
+  "merkle_root": "1b418ead120266702a1b7b8e4779a9ed65f8b9f558c81dc803a2eecf6af0bb2b"
+}
