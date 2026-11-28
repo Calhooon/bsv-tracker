@@ -234,9 +234,9 @@ fn bytes_that_forge_a_mined_word_are_refused() {
     );
     let mut fresh = State::new(&txid).to_compact();
     // Version 2: the hints, the last hint time and the re-ask, then the
-    // instances, the competitors and the prior word.
-    let hints_at = fresh.len() - 6;
-    assert_eq!(&fresh[hints_at..], &[0, 0, 0, 0, 0, 0]);
+    // instances, the competitors, the prior word and the measured length.
+    let hints_at = fresh.len() - 7;
+    assert_eq!(&fresh[hints_at..], &[0, 0, 0, 0, 0, 0, 0]);
     fresh.splice(hints_at..hints_at + 1, [0x80, 0x00]);
     assert_eq!(
         State::from_compact(&fresh),
@@ -310,9 +310,9 @@ fn version_2_refusals() {
     assert_eq!(State::from_compact(&bytes).unwrap(), s);
     // version, txid (34 bytes), word tag 9 handed, evidence 0, suspect 0,
     // hints 0, last hint 0, re-ask 1 and tag 7, two instances ("a" at 5,
-    // "b" at 6), no competitor, no prior word.
+    // "b" at 6), no competitor, no prior word, no measured length.
     assert_eq!(bytes[34], 9);
-    let tail = [0, 0, 0, 0, 1, 7, 2, 1, b'a', 5, 1, b'b', 6, 0, 0];
+    let tail = [0, 0, 0, 0, 1, 7, 2, 1, b'a', 5, 1, b'b', 6, 0, 0, 0];
     assert_eq!(&bytes[35..], &tail);
     let malformed = |b: &[u8], why| {
         assert_eq!(State::from_compact(b), Err(CompactError::Malformed(why)));
@@ -324,7 +324,7 @@ fn version_2_refusals() {
     v1.extend_from_slice(&[0, 0, 0, 0, 0]);
     malformed(&v1, "word tag");
     let mut v1 = State::new(&txid).to_compact();
-    v1.truncate(v1.len() - 4);
+    v1.truncate(v1.len() - 5);
     v1[0] = 1;
     v1.extend_from_slice(&[1, 7]);
     malformed(&v1, "re-ask tag");
@@ -335,7 +335,7 @@ fn version_2_refusals() {
 
     // A handed word with no instance.
     let mut none = bytes[..41].to_vec();
-    none.extend_from_slice(&[0, 0, 0]);
+    none.extend_from_slice(&[0, 0, 0, 0]);
     malformed(&none, "handed word with no instance");
     // An instance named twice.
     let mut twice = bytes.clone();

@@ -141,7 +141,7 @@ fn unknown_and_no_reask() {
     golden(
         "unknown",
         &unknown_and_no_reask_state(),
-        "02000000000000000000000000000000000000000000000000000000000000000001000000000000000000",
+        "0200000000000000000000000000000000000000000000000000000000000000000100000000000000000000",
     );
 }
 
@@ -161,7 +161,7 @@ fn built_with_spend() {
         &built_with_spend_state(),
         concat!(
             "02000000000000000000000000000000000000000000000000000000000000000001010000000001",
-            "06000000",
+            "0600000000",
         ),
     );
 }
@@ -184,7 +184,7 @@ fn announced_with_age() {
         &announced_with_age_state(),
         concat!(
             "02000000000000000000000000000000000000000000000000000000000000000001020000011073",
-            "7475622062726f6164636173746572000a00010a0105000000",
+            "7475622062726f6164636173746572000a00010a010500000000",
         ),
     );
 }
@@ -223,7 +223,7 @@ fn seen_with_every_hint_and_a_hint_reask() {
             "00000000000000000000000000000000000000000000000000000701096e6f742d616e2d69646900",
             "07706c61696e2d3404047220c3a9680007706c61696e2d3303670007706c61696e2d320284076600",
             "07706c61696e2d3101650007706c61696e2d3000640001ac020102056172632d3707cf010107554e",
-            "4b4e4f574e000000000000",
+            "4b4e4f574e00000000000000",
         ),
     );
 }
@@ -252,7 +252,7 @@ fn mined_with_recheck() {
             "00000000000000000000000000000000000000000002000000000000000000000000000000000000",
             "00000000000000000000000000000a00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366",
             "b2215e697fddb64b00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366b2215e697fddb6",
-            "4b010000000104000000",
+            "4b01000000010400000000",
         ),
     );
 }
@@ -278,7 +278,7 @@ fn mined_suspect_with_fork() {
             "00000000000000000000000000000000000000000002000000000000000000000000000000000000",
             "00000000000000000000000000000a00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366",
             "b2215e697fddb64b00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366b2215e697fddb6",
-            "4b01010000010109000000",
+            "4b0101000001010900000000",
         ),
     );
 }
@@ -305,7 +305,7 @@ fn stale_with_reorg() {
             "00000000000000000000000000000000000000000002000000000000000000000000000000000000",
             "00000000000000000000000000000a00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366",
             "b2215e697fddb64b00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366b2215e697fddb6",
-            "4b0100000001000a000000",
+            "4b0100000001000a00000000",
         ),
     );
 }
@@ -336,7 +336,7 @@ fn rejected_with_proof_failed() {
         &rejected_with_proof_failed_state(),
         concat!(
             "02000000000000000000000000000000000000000000000000000000000000000001060c6e6f6465",
-            "2073616964206e6f0000000001030c000000",
+            "2073616964206e6f0000000001030c00000000",
         ),
     );
 }
@@ -363,7 +363,7 @@ fn conflicted_by_ids_and_text() {
         concat!(
             "02000000000000000000000000000000000000000000000000000000000000000001070200000000",
             "000000000000000000000000000000000000000000000000000000000801094e6f742d416e2d4964",
-            "0000000000000000",
+            "000000000000000000",
         ),
     );
 }
@@ -382,7 +382,7 @@ fn abandoned() {
     golden(
         "abandoned",
         &abandoned_state(),
-        "02000000000000000000000000000000000000000000000000000000000000000001080000000000000000",
+        "0200000000000000000000000000000000000000000000000000000000000000000108000000000000000000",
     );
 }
 
@@ -498,11 +498,12 @@ const VERSION_1: [Record; 10] = [
 ];
 
 /// The relation of the two versions on a state with no instance, no
-/// competitor and no prior word: version 2's bytes are version 1's with the
-/// opening byte `02` and three bytes `000000` after the re-ask.
+/// competitor, no prior word and no measured length: version 2's bytes are
+/// version 1's with the opening byte `02` and four bytes `00000000` after the
+/// re-ask.
 fn version_2_of(version_1: &str) -> String {
     assert!(version_1.starts_with("01"));
-    format!("02{}000000", &version_1[2..])
+    format!("02{}00000000", &version_1[2..])
 }
 
 fn unhex(s: &str) -> Vec<u8> {
@@ -539,7 +540,7 @@ fn version_1_bytes_still_restore() {
 }
 
 #[test]
-fn version_2_is_version_1_with_three_empty_fields() {
+fn version_2_is_version_1_with_four_empty_fields() {
     for (name, build, v1) in VERSION_1 {
         let built = build();
         assert_eq!(hex(&built.to_compact()), version_2_of(v1), "{name}");
