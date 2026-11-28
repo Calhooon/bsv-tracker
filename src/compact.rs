@@ -1,17 +1,25 @@
 //! The compact byte form of one [`State`](crate::State) (bsv-stack-lean #92).
 //!
-//! Version 1, every field in order:
+//! Version 2, every field in order, which [`State::to_compact`] writes:
 //!
 //! | field | encoding |
 //! | --- | --- |
-//! | version | one byte, `1` |
+//! | version | one byte, `2` |
 //! | txid | an id |
-//! | word | a tag byte (`0` unknown, `1` built, `2` announced, `3` seen, `4` mined, `5` stale, `6` rejected and its reason, `7` conflicted and its ids, `8` abandoned) |
+//! | word | a tag byte (`0` unknown, `1` built, `2` announced, `3` seen, `4` mined, `5` stale, `6` rejected and its reason, `7` conflicted and its ids, `8` abandoned, `9` handed) |
 //! | evidence | `0`, or `1` and the checked proof's txid (an id), path, header hash and root (ids), root (an id) and depth (a varint) |
 //! | suspect | `0` or `1` |
 //! | hints | a varint count, then each hint, the newest at the front |
 //! | last hint time | `0`, or `1` and a varint |
-//! | re-ask | `0`, or `1` and a tag byte (`0` reorg, `1` fork, `2` hint, `3` proof failed, `4` recheck, `5` age, `6` spend) and its payload |
+//! | re-ask | `0`, or `1` and a tag byte (`0` reorg, `1` fork, `2` hint, `3` proof failed, `4` recheck, `5` age, `6` spend, `7` reannounce) and its payload |
+//! | instances | a varint count, then each instance (a string) and the time of its hand-over (a varint), in [`State::handed_to`]'s order |
+//! | competitors | a varint count, `0`: the record of a conflict, which this release holds empty |
+//! | prior word | `0`: the word held when a conflict began, which this release holds empty |
+//!
+//! Version 1 is version 2 without its last three fields, with no word tag `9`
+//! and no re-ask tag `7`. The reader reads both: a version 1 row restores as
+//! the state it restored to before, with no instance, no competitor and no
+//! prior word.
 //!
 //! A varint is unsigned LEB128 in its shortest form. A string is a varint
 //! length and its UTF-8 bytes. An id is `0` and 32 raw bytes when the text is
@@ -25,17 +33,27 @@
 //!
 //! The decoder accepts only the bytes the encoder writes: a non-canonical
 //! varint, an id written as text that has the raw form, a flag outside its set
-//! or trailing bytes are each refused.
+//! or trailing bytes are each refused. So are, as [`CompactError::Malformed`]:
+//! word tag `9` or re-ask tag `7` under version 1 (`word tag`, `re-ask tag`);
+//! a `handed` word with no instance (`handed word with no instance`); an
+//! instance named twice (`instance named twice`); instances beside a word that
+//! holds none, any word but `handed` and `conflicted`
+//! (`instances beside a word that holds none`); a count of competitors that is
+//! not `0` (`competitors`); and a prior word that is not `0` (`prior word`).
+//!
+//! [`State::to_compact`]: crate::State::to_compact
+//! [`State::handed_to`]: crate::State::handed_to
 
 use crate::{
-    CheckError, CheckedProof, Header, Height, Hint, HintStatus, Proof, Reask, Timestamp, TxId,
-    Verdict, Word,
+    CheckError, CheckedProof, HandedTo, Header, Height, Hint, HintStatus, Proof, Reask, Timestamp,
+    TxId, Verdict, Word,
 };
 use bsv_rs::transaction::{MerklePath, MerklePathLeaf};
 use std::fmt;
 
 /// The version byte [`State::to_compact`](crate::State::to_compact) writes.
-pub const COMPACT_VERSION: u8 = 1;
+/// [`State::from_compact`](crate::State::from_compact) reads it and `1`.
+pub const COMPACT_VERSION: u8 = 2;
 
 /// Bytes [`State::from_compact`](crate::State::from_compact) refuses. A
 /// refusal restores nothing; the host re-tracks the transaction.
@@ -71,6 +89,7 @@ pub(crate) struct Parts {
     pub hints: Vec<Hint>,
     pub last_hint_at: Option<Timestamp>,
     pub reask: Option<Reask>,
+    pub handed_to: Vec<HandedTo>,
 }
 
 pub(crate) struct Fields<'a> {
@@ -81,6 +100,7 @@ pub(crate) struct Fields<'a> {
     pub hints: &'a [Hint],
     pub last_hint_at: Option<Timestamp>,
     pub reask: Option<&'a Reask>,
+    pub handed_to: &'a [HandedTo],
 }
 
 pub(crate) fn encode(fields: &Fields<'_>) -> Vec<u8> {
@@ -112,15 +132,24 @@ pub(crate) fn encode(fields: &Fields<'_>) -> Vec<u8> {
             w.reask(reask);
         }
     }
+    w.len(fields.handed_to.len());
+    for held in fields.handed_to {
+        w.string(&held.instance);
+        w.varint(held.at);
+    }
+    // The record of competitors and the prior word: empty in this release.
+    w.len(0);
+    w.byte(0);
     w.0
 }
 
 pub(crate) fn decode(bytes: &[u8]) -> Result<Parts, CompactError> {
-    let mut r = Reader(bytes);
+    let mut r = Reader { bytes, version: 0 };
     let version = r.byte()?;
-    if version != COMPACT_VERSION {
+    if version != 1 && version != COMPACT_VERSION {
         return Err(CompactError::UnknownVersion(version));
     }
+    r.version = version;
     let txid = r.id()?;
     if txid != txid.to_ascii_lowercase() {
         return Err(CompactError::Malformed("txid not lowercase"));
@@ -151,8 +180,37 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Parts, CompactError> {
     }
     let last_hint_at = r.option(Reader::varint)?;
     let reask = r.option(Reader::reask)?;
-    if !r.0.is_empty() {
+    let mut handed_to: Vec<HandedTo> = vec![];
+    if version >= 2 {
+        let count = r.count()?;
+        for _ in 0..count {
+            let instance = r.string()?;
+            let at = r.varint()?;
+            if handed_to.iter().any(|h| h.instance == instance) {
+                return Err(CompactError::Malformed("instance named twice"));
+            }
+            handed_to.push(HandedTo::new(instance, at));
+        }
+        if r.varint()? != 0 {
+            return Err(CompactError::Malformed("competitors"));
+        }
+        if r.byte()? != 0 {
+            return Err(CompactError::Malformed("prior word"));
+        }
+    }
+    if !r.bytes.is_empty() {
         return Err(CompactError::TrailingBytes);
+    }
+    match (&word, handed_to.is_empty()) {
+        (Some(Word::Handed), true) => {
+            return Err(CompactError::Malformed("handed word with no instance"));
+        }
+        (Some(Word::Handed | Word::Conflicted { .. }), _) | (_, true) => {}
+        _ => {
+            return Err(CompactError::Malformed(
+                "instances beside a word that holds none",
+            ))
+        }
     }
     Ok(Parts {
         txid,
@@ -162,6 +220,7 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Parts, CompactError> {
         hints,
         last_hint_at,
         reask,
+        handed_to,
     })
 }
 
@@ -320,19 +379,23 @@ impl Writer {
     }
 }
 
-struct Reader<'a>(&'a [u8]);
+struct Reader<'a> {
+    bytes: &'a [u8],
+    /// The version byte read, which decides the tags the reader takes.
+    version: u8,
+}
 impl Reader<'_> {
     fn take(&mut self, n: usize) -> Result<&[u8], CompactError> {
-        if n > self.0.len() {
+        if n > self.bytes.len() {
             return Err(CompactError::Truncated);
         }
-        let (head, rest) = self.0.split_at(n);
-        self.0 = rest;
+        let (head, rest) = self.bytes.split_at(n);
+        self.bytes = rest;
         Ok(head)
     }
     fn byte(&mut self) -> Result<u8, CompactError> {
-        let (&b, rest) = self.0.split_first().ok_or(CompactError::Truncated)?;
-        self.0 = rest;
+        let (&b, rest) = self.bytes.split_first().ok_or(CompactError::Truncated)?;
+        self.bytes = rest;
         Ok(b)
     }
     fn flag(&mut self) -> Result<bool, CompactError> {
@@ -367,7 +430,7 @@ impl Reader<'_> {
     /// remaining bytes is refused before anything is allocated.
     fn count(&mut self) -> Result<usize, CompactError> {
         let n = usize::try_from(self.varint()?).map_err(|_| CompactError::Truncated)?;
-        if n > self.0.len() {
+        if n > self.bytes.len() {
             return Err(CompactError::Truncated);
         }
         Ok(n)
@@ -417,6 +480,7 @@ impl Reader<'_> {
         Ok(Some(match self.byte()? {
             0 => Word::Unknown,
             1 => Word::Built,
+            9 if self.version >= 2 => Word::Handed,
             2 => Word::Announced,
             3 => Word::Seen,
             4 => return Ok(None),
@@ -516,6 +580,7 @@ impl Reader<'_> {
             4 => Reask::Recheck,
             5 => Reask::Age,
             6 => Reask::Spend,
+            7 if self.version >= 2 => Reask::Reannounce,
             _ => return Err(CompactError::Malformed("re-ask tag")),
         })
     }

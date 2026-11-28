@@ -25,6 +25,9 @@ fn hex(bytes: &[u8]) -> String {
 /// its recheck due, `State::from_compact`'s rule, so it is not compared).
 fn golden(name: &str, s: &State, expected: &str) {
     let bytes = s.to_compact();
+    // The ten strings below are version 1's until their re-record; the
+    // writer's version 2 bytes are compared through the exact relation.
+    let expected = version_2_of(expected);
     assert_eq!(hex(&bytes), expected, "{name}: the compact bytes moved");
     let restored = State::from_compact(&bytes).unwrap();
     if !matches!(s.word(), Word::Mined(_)) {
@@ -132,25 +135,33 @@ fn every_hint_status_with_and_without_a_verdict_is_held() {
     assert_eq!(hints.iter().filter(|h| h.verdict.is_some()).count(), 9);
 }
 
+fn unknown_and_no_reask_state() -> State {
+    State::new(hash(1))
+}
+
 #[test]
 fn unknown_and_no_reask() {
     golden(
         "unknown",
-        &State::new(hash(1)),
+        &unknown_and_no_reask_state(),
         "01000000000000000000000000000000000000000000000000000000000000000001000000000000",
     );
 }
 
-#[test]
-fn built_with_spend() {
+fn built_with_spend_state() -> State {
     let h = TestHeaders::default();
     let mut s = State::new(hash(1));
     step(&mut s, &h, Input::Host(HostAction::Build));
     step(&mut s, &h, Input::Host(HostAction::SpendAttempt));
     assert_eq!(s.reask(), Some(&Reask::Spend));
+    s
+}
+
+#[test]
+fn built_with_spend() {
     golden(
         "built",
-        &s,
+        &built_with_spend_state(),
         concat!(
             "01000000000000000000000000000000000000000000000000000000000000000001010000000001",
             "06",
@@ -158,8 +169,7 @@ fn built_with_spend() {
     );
 }
 
-#[test]
-fn announced_with_age() {
+fn announced_with_age_state() -> State {
     let h = TestHeaders::default();
     let mut s = State::new(hash(1));
     step(&mut s, &h, Input::Host(HostAction::Build));
@@ -167,9 +177,14 @@ fn announced_with_age() {
     step(&mut s, &h, Input::Host(HostAction::Tick(70)));
     assert_eq!(s.word(), &Word::Announced);
     assert_eq!(s.reask(), Some(&Reask::Age));
+    s
+}
+
+#[test]
+fn announced_with_age() {
     golden(
         "announced",
-        &s,
+        &announced_with_age_state(),
         concat!(
             "01000000000000000000000000000000000000000000000000000000000000000001020000011073",
             "7475622062726f6164636173746572000a00010a0105",
@@ -177,8 +192,7 @@ fn announced_with_age() {
     );
 }
 
-#[test]
-fn seen_with_every_hint_and_a_hint_reask() {
+fn seen_with_every_hint_and_a_hint_reask_state() -> State {
     let h = TestHeaders::default();
     let mut s = State::new(hash(1));
     step(&mut s, &h, Input::Host(HostAction::Build));
@@ -188,9 +202,14 @@ fn seen_with_every_hint_and_a_hint_reask() {
     assert_eq!(s.word(), &Word::Seen);
     assert_eq!(s.hints().len(), 19);
     assert!(matches!(s.reask(), Some(Reask::Hint(_))));
+    s
+}
+
+#[test]
+fn seen_with_every_hint_and_a_hint_reask() {
     golden(
         "seen",
-        &s,
+        &seen_with_every_hint_and_a_hint_reask_state(),
         concat!(
             "01000000000000000000000000000000000000000000000000000000000000000001030000130763",
             "6f75726965720809636f75726965722d62ac02010f5345454e5f4f4e5f4e4554574f524b00000005",
@@ -212,8 +231,7 @@ fn seen_with_every_hint_and_a_hint_reask() {
     );
 }
 
-#[test]
-fn mined_with_recheck() {
+fn mined_with_recheck_state() -> State {
     let mut h = TestHeaders::default();
     let mut s = mined_state(&mut h);
     let other = proof(&hash(2), 11, 3);
@@ -222,9 +240,14 @@ fn mined_with_recheck() {
     assert!(matches!(s.word(), Word::Mined(_)));
     assert!(s.evidence().is_some());
     assert_eq!(s.reask(), Some(&Reask::Recheck));
+    s
+}
+
+#[test]
+fn mined_with_recheck() {
     golden(
         "mined",
-        &s,
+        &mined_with_recheck_state(),
         concat!(
             "01000000000000000000000000000000000000000000000000000000000000000001040100000000",
             "00000000000000000000000000000000000000000000000000000000010a01020006000000000000",
@@ -237,16 +260,20 @@ fn mined_with_recheck() {
     );
 }
 
-#[test]
-fn mined_suspect_with_fork() {
+fn mined_suspect_with_fork_state() -> State {
     let mut h = TestHeaders::default();
     let mut s = mined_state(&mut h);
     step(&mut s, &h, Input::Evidence(Evidence::Chain(fork(9))));
     assert!(s.suspect());
     assert_eq!(s.reask(), Some(&Reask::Fork { height: 9 }));
+    s
+}
+
+#[test]
+fn mined_suspect_with_fork() {
     golden(
         "fork",
-        &s,
+        &mined_suspect_with_fork_state(),
         concat!(
             "01000000000000000000000000000000000000000000000000000000000000000001040100000000",
             "00000000000000000000000000000000000000000000000000000000010a01020006000000000000",
@@ -259,17 +286,21 @@ fn mined_suspect_with_fork() {
     );
 }
 
-#[test]
-fn stale_with_reorg() {
+fn stale_with_reorg_state() -> State {
     let mut h = TestHeaders::default();
     let mut s = mined_state(&mut h);
     h.move_root(10, 50);
     step(&mut s, &h, Input::Evidence(Evidence::Chain(reorg(10))));
     assert_eq!(s.word(), &Word::Stale);
     assert_eq!(s.reask(), Some(&Reask::Reorg { fork_height: 10 }));
+    s
+}
+
+#[test]
+fn stale_with_reorg() {
     golden(
         "stale",
-        &s,
+        &stale_with_reorg_state(),
         concat!(
             "01000000000000000000000000000000000000000000000000000000000000000001050100000000",
             "00000000000000000000000000000000000000000000000000000000010a01020006000000000000",
@@ -282,8 +313,7 @@ fn stale_with_reorg() {
     );
 }
 
-#[test]
-fn rejected_with_proof_failed() {
+fn rejected_with_proof_failed_state() -> State {
     let h = TestHeaders::default();
     let mut s = State::new(hash(1));
     step(
@@ -299,9 +329,14 @@ fn rejected_with_proof_failed() {
         Err(CheckError::TxidMismatch)
     );
     assert_eq!(s.reask(), Some(&Reask::ProofFailed { height: 12 }));
+    s
+}
+
+#[test]
+fn rejected_with_proof_failed() {
     golden(
         "rejected",
-        &s,
+        &rejected_with_proof_failed_state(),
         concat!(
             "01000000000000000000000000000000000000000000000000000000000000000001060c6e6f6465",
             "2073616964206e6f0000000001030c",
@@ -309,8 +344,7 @@ fn rejected_with_proof_failed() {
     );
 }
 
-#[test]
-fn conflicted_by_ids_and_text() {
+fn conflicted_by_ids_and_text_state() -> State {
     let h = TestHeaders::default();
     let mut s = State::new(hash(1));
     step(
@@ -321,9 +355,14 @@ fn conflicted_by_ids_and_text() {
         })),
     );
     assert!(matches!(s.word(), Word::Conflicted { .. }));
+    s
+}
+
+#[test]
+fn conflicted_by_ids_and_text() {
     golden(
         "conflicted",
-        &s,
+        &conflicted_by_ids_and_text_state(),
         concat!(
             "01000000000000000000000000000000000000000000000000000000000000000001070200000000",
             "000000000000000000000000000000000000000000000000000000000801094e6f742d416e2d4964",
@@ -332,16 +371,187 @@ fn conflicted_by_ids_and_text() {
     );
 }
 
-#[test]
-fn abandoned() {
+fn abandoned_state() -> State {
     let h = TestHeaders::default();
     let mut s = State::new(hash(1));
     step(&mut s, &h, Input::Host(HostAction::Build));
     step(&mut s, &h, Input::Host(HostAction::Abandon));
     assert_eq!(s.word(), &Word::Abandoned);
+    s
+}
+
+#[test]
+fn abandoned() {
     golden(
         "abandoned",
-        &s,
+        &abandoned_state(),
         "01000000000000000000000000000000000000000000000000000000000000000001080000000000",
     );
+}
+
+/// The ten states of record with the version 1 bytes each wrote up to
+/// 0.9.0-beta.11, verbatim. They are the reader's record and never move: a
+/// version 1 row a host stored still restores.
+type Record = (&'static str, fn() -> State, &'static str);
+const VERSION_1: [Record; 10] = [
+    (
+        "unknown",
+        unknown_and_no_reask_state,
+        "01000000000000000000000000000000000000000000000000000000000000000001000000000000",
+    ),
+    (
+        "built",
+        built_with_spend_state,
+        concat!(
+            "01000000000000000000000000000000000000000000000000000000000000000001010000000001",
+            "06",
+        ),
+    ),
+    (
+        "announced",
+        announced_with_age_state,
+        concat!(
+            "01000000000000000000000000000000000000000000000000000000000000000001020000011073",
+            "7475622062726f6164636173746572000a00010a0105",
+        ),
+    ),
+    (
+        "seen",
+        seen_with_every_hint_and_a_hint_reask_state,
+        concat!(
+            "01000000000000000000000000000000000000000000000000000000000000000001030000130763",
+            "6f75726965720809636f75726965722d62ac02010f5345454e5f4f4e5f4e4554574f524b00000005",
+            "6172632d3707cf010107554e4b4e4f574e000000056172632d3606ce0101165345454e5f494e5f4f",
+            "525048414e5f4d454d504f4f4c000000056172632d35050100000000000000000000000000000000",
+            "0000000000000000000000000000000007cd010116444f55424c455f5350454e445f415454454d50",
+            "54454400000100000000000000000000000000000000000000000000000000000000000000000705",
+            "6172632d34040a62616420736372697074cc01010852454a454354454400010a6261642073637269",
+            "707400056172632d3303cb0101144d494e45445f494e5f5354414c455f424c4f434b018307000005",
+            "6172632d32028407ca0101054d494e45440184070000056172632d3101c901010f5345454e5f4f4e",
+            "5f4e4554574f524b0001046e6f746500056172632d3000c801011341434345505445445f42595f4e",
+            "4554574f524b00000007706c61696e2d390809636f75726965722d616d0007706c61696e2d38076c",
+            "0007706c61696e2d37066b0007706c61696e2d3605006a0007706c61696e2d350502000000000000",
+            "00000000000000000000000000000000000000000000000000000701096e6f742d616e2d69646900",
+            "07706c61696e2d3404047220c3a9680007706c61696e2d3303670007706c61696e2d320284076600",
+            "07706c61696e2d3101650007706c61696e2d3000640001ac020102056172632d3707cf010107554e",
+            "4b4e4f574e000000",
+        ),
+    ),
+    (
+        "mined",
+        mined_with_recheck_state,
+        concat!(
+            "01000000000000000000000000000000000000000000000000000000000000000001040100000000",
+            "00000000000000000000000000000000000000000000000000000000010a01020006000000000000",
+            "00000000000000000000000000000000000000000000000000000101040000000000000000000000",
+            "00000000000000000000000000000000000000000002000000000000000000000000000000000000",
+            "00000000000000000000000000000a00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366",
+            "b2215e697fddb64b00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366b2215e697fddb6",
+            "4b010000000104",
+        ),
+    ),
+    (
+        "fork",
+        mined_suspect_with_fork_state,
+        concat!(
+            "01000000000000000000000000000000000000000000000000000000000000000001040100000000",
+            "00000000000000000000000000000000000000000000000000000000010a01020006000000000000",
+            "00000000000000000000000000000000000000000000000000000101040000000000000000000000",
+            "00000000000000000000000000000000000000000002000000000000000000000000000000000000",
+            "00000000000000000000000000000a00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366",
+            "b2215e697fddb64b00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366b2215e697fddb6",
+            "4b01010000010109",
+        ),
+    ),
+    (
+        "stale",
+        stale_with_reorg_state,
+        concat!(
+            "01000000000000000000000000000000000000000000000000000000000000000001050100000000",
+            "00000000000000000000000000000000000000000000000000000000010a01020006000000000000",
+            "00000000000000000000000000000000000000000000000000000101040000000000000000000000",
+            "00000000000000000000000000000000000000000002000000000000000000000000000000000000",
+            "00000000000000000000000000000a00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366",
+            "b2215e697fddb64b00ff8f6e7ac7aa0bfc98af8be24ed6ae1ab243f64aaa065366b2215e697fddb6",
+            "4b0100000001000a",
+        ),
+    ),
+    (
+        "rejected",
+        rejected_with_proof_failed_state,
+        concat!(
+            "01000000000000000000000000000000000000000000000000000000000000000001060c6e6f6465",
+            "2073616964206e6f0000000001030c",
+        ),
+    ),
+    (
+        "conflicted",
+        conflicted_by_ids_and_text_state,
+        concat!(
+            "01000000000000000000000000000000000000000000000000000000000000000001070200000000",
+            "000000000000000000000000000000000000000000000000000000000801094e6f742d416e2d4964",
+            "0000000000",
+        ),
+    ),
+    (
+        "abandoned",
+        abandoned_state,
+        "01000000000000000000000000000000000000000000000000000000000000000001080000000000",
+    ),
+];
+
+/// The relation of the two versions on a state with no instance, no
+/// competitor and no prior word: version 2's bytes are version 1's with the
+/// opening byte `02` and three bytes `000000` after the re-ask.
+fn version_2_of(version_1: &str) -> String {
+    assert!(version_1.starts_with("01"));
+    format!("02{}000000", &version_1[2..])
+}
+
+fn unhex(s: &str) -> Vec<u8> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+#[test]
+fn version_1_bytes_still_restore() {
+    for (name, build, v1) in VERSION_1 {
+        let built = build();
+        let restored = State::from_compact(&unhex(v1)).unwrap();
+        if matches!(built.word(), Word::Mined(_)) {
+            // `State::from_compact`'s rule: a restored mined word is suspect
+            // with its recheck due; every other field is the built state's.
+            assert_eq!(restored.word(), built.word(), "{name}");
+            assert_eq!(restored.evidence(), built.evidence(), "{name}");
+            assert!(restored.suspect(), "{name}");
+            assert_eq!(
+                restored.reask(),
+                built.reask().or(Some(&Reask::Recheck)),
+                "{name}"
+            );
+            assert_eq!(restored.hints(), built.hints(), "{name}");
+            assert_eq!(restored.last_hint_at(), built.last_hint_at(), "{name}");
+            assert_eq!(restored.txid(), built.txid(), "{name}");
+        } else {
+            assert_eq!(restored, built, "{name}");
+        }
+        assert!(restored.handed_to().is_empty(), "{name}");
+    }
+}
+
+#[test]
+fn version_2_is_version_1_with_three_empty_fields() {
+    for (name, build, v1) in VERSION_1 {
+        let built = build();
+        assert_eq!(hex(&built.to_compact()), version_2_of(v1), "{name}");
+        let from_1 = State::from_compact(&unhex(v1)).unwrap();
+        let from_2 = State::from_compact(&unhex(&version_2_of(v1))).unwrap();
+        assert_eq!(from_2, from_1, "{name}");
+        if !matches!(built.word(), Word::Mined(_)) {
+            // A version 1 row re-encoded writes the relation.
+            assert_eq!(hex(&from_1.to_compact()), version_2_of(v1), "{name}");
+        }
+    }
 }
