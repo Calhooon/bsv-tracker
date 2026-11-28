@@ -96,7 +96,7 @@ fn say(line: &str) {
 struct StatesLine {
     cursor: u64,
     tip: u32,
-    splits: Vec<u32>,
+    splits: Vec<(String, u32)>,
     rivals: Vec<(u32, u32)>,
     summary: Option<(u32, u32)>,
 }
@@ -111,6 +111,15 @@ fn number<T: std::str::FromStr>(text: &str) -> Option<T> {
 fn pair(text: &str) -> Option<(u32, u32)> {
     let (fork, tip) = text.split_once(':')?;
     Some((number(fork)?, number(tip)?))
+}
+
+/// An open split as printed, `key:height` (the keyed form, cut 1f).
+fn split_pair(text: &str) -> Option<(String, u32)> {
+    let (key, fork) = text.rsplit_once(':')?;
+    if key.is_empty() {
+        return None;
+    }
+    Some((key.to_owned(), number(fork)?))
 }
 
 fn list<T>(text: &str, item: impl Fn(&str) -> Option<T>) -> Option<Vec<T>> {
@@ -130,7 +139,7 @@ fn parse_line(line: &str) -> Option<StatesLine> {
     Some(StatesLine {
         cursor: number(cursor)?,
         tip: number(tip)?,
-        splits: list(splits, number)?,
+        splits: list(splits, split_pair)?,
         rivals: list(rivals, pair)?,
         summary: if summary == "-" {
             None
@@ -375,47 +384,47 @@ fn journals_reproduce_the_states_after_every_row() {
 fn a_wrong_line_is_named_by_its_fields() {
     let ds = Doubts::new(
         vec![Rival::new(10, 12), Rival::new(5, 7)],
-        vec![9, 4],
+        vec![("k9".into(), 9), ("k4".into(), 4)],
         20,
         Some(Rival::new(1, 3)),
     );
     let cases: [(&str, u64, &[&str]); 8] = [
         (
-            "77 tip=20 splits=[9 4] rivals=[10:12 5:7] summary=1:3",
+            "77 tip=20 splits=[k9:9 k4:4] rivals=[10:12 5:7] summary=1:3",
             77,
             &[],
         ),
         (
-            "78 tip=20 splits=[9 4] rivals=[10:12 5:7] summary=1:3",
+            "78 tip=20 splits=[k9:9 k4:4] rivals=[10:12 5:7] summary=1:3",
             77,
             &["cursor", "line"],
         ),
         (
-            "77 tip=21 splits=[9 4] rivals=[10:12 5:7] summary=1:3",
+            "77 tip=21 splits=[k9:9 k4:4] rivals=[10:12 5:7] summary=1:3",
             77,
             &["tip", "line"],
         ),
         (
-            "77 tip=20 splits=[9] rivals=[10:12 5:7] summary=1:3",
+            "77 tip=20 splits=[k9:9] rivals=[10:12 5:7] summary=1:3",
             77,
             &["splits", "line"],
         ),
         (
-            "77 tip=20 splits=[9 4] rivals=[5:7 10:12] summary=1:3",
+            "77 tip=20 splits=[k9:9 k4:4] rivals=[5:7 10:12] summary=1:3",
             77,
             &["line"],
         ),
         (
-            "77 tip=20 splits=[9 4] rivals=[10:12] summary=1:3",
+            "77 tip=20 splits=[k9:9 k4:4] rivals=[10:12] summary=1:3",
             77,
             &["rivals", "line"],
         ),
         (
-            "77 tip=20 splits=[9 4] rivals=[10:12 5:7] summary=-",
+            "77 tip=20 splits=[k9:9 k4:4] rivals=[10:12 5:7] summary=-",
             77,
             &["summary", "line"],
         ),
-        ("77 tip=20 splits=9,4 rivals=10:12,5:7", 77, &["line"]),
+        ("77 tip=20 splits=k9:9,k4:4 rivals=10:12,5:7", 77, &["line"]),
     ];
     for (line, cursor, expected) in cases {
         assert_eq!(differing(line, cursor, &ds), expected, "{line}");
@@ -423,7 +432,7 @@ fn a_wrong_line_is_named_by_its_fields() {
     // A pair held twice is not a set, on either side.
     assert_eq!(
         differing(
-            "77 tip=20 splits=[9 4] rivals=[10:12 5:7 5:7] summary=1:3",
+            "77 tip=20 splits=[k9:9 k4:4] rivals=[10:12 5:7 5:7] summary=1:3",
             77,
             &ds
         ),
