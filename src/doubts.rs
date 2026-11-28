@@ -782,9 +782,12 @@ where
             }
             still_confirmed(headers, state)
         }
-        word @ (Word::Unknown | Word::Built | Word::Announced | Word::Seen | Word::Abandoned) => {
-            Ok(rule_allows(rule, word))
-        }
+        word @ (Word::Unknown
+        | Word::Built
+        | Word::Handed
+        | Word::Announced
+        | Word::Seen
+        | Word::Abandoned) => Ok(rule_allows(rule, word)),
         Word::Stale | Word::Rejected { .. } | Word::Conflicted { .. } => Ok(false),
     }
 }
@@ -792,9 +795,9 @@ where
 /// The spend guard read on the effective depth. A `Mined` word is spendable
 /// when its height's [`eff_depth`] is at least [`Params::spend_depth`] and
 /// the headers of the moment still carry its checked root; a word that
-/// claims nothing of the chain (`Unknown`, `Built`, `Announced`, `Seen`,
-/// `Abandoned`) is spendable only under a rule that allows it, and reads no
-/// header; `Stale`, `Rejected` and `Conflicted` are never spendable. The
+/// claims nothing of the chain (`Unknown`, `Built`, `Handed`, `Announced`,
+/// `Seen`, `Abandoned`) is spendable only under a rule that allows it, and
+/// reads no header; `Stale`, `Rejected` and `Conflicted` are never spendable. The
 /// Lean's `spendableEff`.
 ///
 /// The depth is the host's own, read from `params`, set once when it built

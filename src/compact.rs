@@ -224,6 +224,7 @@ impl Writer {
         match word {
             Word::Unknown => self.byte(0),
             Word::Built => self.byte(1),
+            Word::Handed => self.byte(9),
             Word::Announced => self.byte(2),
             Word::Seen => self.byte(3),
             // The checked proof is the evidence field; a mined word shares it.
@@ -314,6 +315,7 @@ impl Writer {
             Reask::Recheck => self.byte(4),
             Reask::Age => self.byte(5),
             Reask::Spend => self.byte(6),
+            Reask::Reannounce => self.byte(7),
         }
     }
 }
@@ -590,6 +592,7 @@ mod tests {
             Reask::Recheck,
             Reask::Age,
             Reask::Spend,
+            Reask::Reannounce,
         ];
         assert_eq!(every.len(), Reask::LABELS.len());
         let mut tags: Vec<usize> = every.iter().map(reask_tag).collect();

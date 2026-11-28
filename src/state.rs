@@ -2,6 +2,7 @@ use crate::{
     ChainEvent, CheckError, CheckedProof, CompactError, Headers, Height, Hint, HintStatus, Proof,
     Timestamp, TxId,
 };
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// Inclusion backed by an immutable checked capability; height is derived.
@@ -26,13 +27,50 @@ impl Mined {
         &self.checked
     }
 }
-/// The nine words. `Mined` needs an unforgeable checked proof.
+/// The ten words, mirrored from `Tracker.Word` (bsv-stack-lean
+/// `lean/Tracker.lean`). `Mined` needs an unforgeable checked proof.
+///
+/// Three tiers: the host's (`Unknown`, `Built`, `Handed`, `Abandoned`,
+/// written by the host's own acts), the hint tier (`Announced`, `Seen`,
+/// written by a broadcaster's word and claiming nothing of the chain) and the
+/// chain tier (`Mined`, `Stale`, `Rejected`, `Conflicted`, written only on
+/// evidence).
+///
+/// `Word` is not `#[non_exhaustive]`, on purpose: a word is a decision each
+/// host makes about what it may do, so a new word breaks every exhaustive
+/// match on it outside this crate until the host names it. `Handed`, the
+/// tenth, did so: a match over the nine words of 0.9.0-beta.11 no longer
+/// compiles.
+///
+/// ```compile_fail,E0004
+/// use bsv_tracker::Word;
+/// fn label(word: &Word) -> &'static str {
+///     match word {
+///         Word::Unknown => "unknown",
+///         Word::Built => "built",
+///         Word::Announced => "announced",
+///         Word::Seen => "seen",
+///         Word::Mined(_) => "mined",
+///         Word::Stale => "stale",
+///         Word::Rejected { .. } => "rejected",
+///         Word::Conflicted { .. } => "conflicted",
+///         Word::Abandoned => "abandoned",
+///     }
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Word {
     /// Tracked, with no claim from any tier.
     Unknown,
     /// The host built the transaction.
     Built,
+    /// The bytes left the host's hands for one or more named instances and
+    /// none has answered: written by the host's own act
+    /// [`HostAction::HandOver`] before the post leaves, never at a timeout. It
+    /// claims nothing about the chain and nothing about any instance; the
+    /// instances stand beside it in [`State::handed_to`]. A host that feeds
+    /// no hand-over never sees it. `Tracker.Word.handed`.
+    Handed,
     /// A broadcaster accepted the transaction.
     Announced,
     /// A broadcaster reports the transaction seen on the network.
@@ -103,6 +141,32 @@ pub enum Evidence {
     /// Recheck a mined word against the current headers.
     Recheck,
 }
+/// One instance the bytes were handed to and that has not been discharged,
+/// with the host's time of its hand-over: one pair of the Lean's
+/// `State.handedTo : List (String × Nat)`.
+///
+/// A host stores the list ([`State::handed_to`]) by this serde form,
+/// `{"instance":"arcade","at":1700000000}`, and reads it back by it, never by
+/// a hand map. `#[non_exhaustive]`: build one with [`HandedTo::new`].
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct HandedTo {
+    /// The instance's name, as the host's [`HostAction::HandOver`] gave it;
+    /// a [`HostAction::Discharge`] is compared with it, never with a hint's
+    /// `source`.
+    pub instance: String,
+    /// The host's time of the instance's latest hand-over.
+    pub at: Timestamp,
+}
+impl HandedTo {
+    /// One instance and the time of its hand-over.
+    pub fn new(instance: impl Into<String>, at: Timestamp) -> Self {
+        Self {
+            instance: instance.into(),
+            at,
+        }
+    }
+}
 /// Acts supplied by the host, including its clock and spend guard.
 ///
 /// `#[non_exhaustive]` (bsv-stack-lean `docs/DECISIONS-2026-10-19.md`
@@ -131,6 +195,36 @@ pub enum HostAction {
     SpendAttempt,
     /// The host's clock reads this time.
     Tick(Timestamp),
+    /// The bytes are about to leave for the named instance, at the host's
+    /// time `at`: fed, and its result stored, before the post leaves. From
+    /// `Unknown`, `Built` and `Handed` it writes `Handed` with the instance on
+    /// [`State::handed_to`] (added, or its time renewed in its place) and
+    /// clears a pending [`Reask::Reannounce`]; an `Abandoned` state is left
+    /// whole (an abandoned template is never announced); on any other word it
+    /// writes no word and only clears a pending `Reannounce`.
+    /// `Tracker.HostAction.handOver`.
+    HandOver {
+        /// The instance the bytes are handed to.
+        instance: String,
+        /// The host's time of the post.
+        at: Timestamp,
+    },
+    /// The host's reduction found that the named instance answered and keeps
+    /// nothing: from `Handed` the instance leaves the list, and the word
+    /// returns to `Built` when the list is empty. Every other word is
+    /// untouched: one instance's refusal does not unsay another's take.
+    /// `Tracker.HostAction.discharge`.
+    Discharge {
+        /// The instance, compared with the hand-over's `instance`.
+        instance: String,
+    },
+    /// The end of a received payment's hold: `Unknown`, `Built` and `Handed`
+    /// read `Abandoned`, the list emptied and a pending
+    /// [`Reask::Reannounce`] cleared; every other word is untouched. The crate
+    /// cannot see where a transaction came from: this is the act of a payment
+    /// the host received, never of a transaction of its own.
+    /// `Tracker.HostAction.endHold`.
+    EndHold,
 }
 /// One input to `Tracker.step`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -195,6 +289,11 @@ pub enum Reask {
     Age,
     /// The host is about to spend; recheck before it does.
     Spend,
+    /// A `Handed` word whose oldest hand-over is one age threshold old: post
+    /// the bytes again to each instance of [`State::handed_to`]. Never a proof
+    /// request, and never [`Reask::Age`]; the next
+    /// [`HostAction::HandOver`] clears it. `Tracker.Reask.reannounce`.
+    Reannounce,
 }
 impl Reask {
     /// Every kind's word, in declaration order, which is the order of the
@@ -208,6 +307,7 @@ impl Reask {
         "recheck",
         "age",
         "spend",
+        "reannounce",
     ];
     /// The kind's stable word, the payload not in it: `reorg` for
     /// `Reorg { fork_height: 10 }`, `hint` for any `Hint(_)`.
@@ -221,6 +321,7 @@ impl Reask {
             Self::Recheck => "recheck",
             Self::Age => "age",
             Self::Spend => "spend",
+            Self::Reannounce => "reannounce",
         }
     }
 }
@@ -334,6 +435,7 @@ pub struct State {
     hints: Vec<Hint>,
     last_hint_at: Option<Timestamp>,
     reask: Option<Reask>,
+    handed_to: Vec<HandedTo>,
 }
 impl State {
     /// Birth with no chain claim or stored evidence, as in `Tracker.State.init`.
@@ -346,6 +448,7 @@ impl State {
             hints: vec![],
             last_hint_at: None,
             reask: None,
+            handed_to: vec![],
         }
     }
     /// The host's tracked transaction.
@@ -382,6 +485,17 @@ impl State {
     #[must_use]
     pub fn reask(&self) -> Option<&Reask> {
         self.reask.as_ref()
+    }
+    /// The instances the bytes were handed to and not discharged, each with
+    /// the time of its hand-over, in the order of each instance's earliest
+    /// hand-over (`Tracker.State.handedTo`). Not empty while the word is
+    /// [`Word::Handed`] (`handedNamed_run`); emptied by evidence that writes
+    /// `Mined` or `Rejected`, by a hint that raises the word and by
+    /// [`HostAction::EndHold`]; kept under a `Conflicted` word that was
+    /// `Handed`. A host stores it by [`HandedTo`]'s serde form.
+    #[must_use]
+    pub fn handed_to(&self) -> &[HandedTo] {
+        &self.handed_to
     }
     /// The compact byte form (bsv-stack-lean #92): a version byte, the txid,
     /// the word, the evidence, the suspect mark, the hints, the last hint time
@@ -449,6 +563,7 @@ impl State {
             hints: parts.hints,
             last_hint_at: parts.last_hint_at,
             reask: parts.reask,
+            handed_to: vec![],
         };
         if mined {
             state.suspect = true;
@@ -482,15 +597,26 @@ impl State {
     }
 
     fn on_hint(&mut self, hint: Hint) {
+        let before = self.word.clone();
         match (&self.word, &hint.status) {
             // A node we did not broadcast through holds the bytes, so someone
             // announced it; the chain has no author (ruling (2), bsv-stack-lean
             // docs/RULINGS-2026-10-12.md, 2026-10-20 19:4xZ).
-            (Word::Built, HintStatus::Accepted | HintStatus::MempoolPresent { .. }) => {
+            (
+                Word::Built | Word::Handed,
+                HintStatus::Accepted | HintStatus::MempoolPresent { .. },
+            ) => {
                 self.word = Word::Announced;
             }
-            (Word::Built | Word::Announced, HintStatus::Seen) => self.word = Word::Seen,
+            (Word::Built | Word::Handed | Word::Announced, HintStatus::Seen) => {
+                self.word = Word::Seen;
+            }
             _ => {}
+        }
+        // A hint that moves the word empties the list (`Tracker.onHint`): a
+        // take is not unsaid by another instance's silence.
+        if self.word != before {
+            self.handed_to.clear();
         }
         if !agrees(&self.word, &hint.status) {
             self.reask = Some(Reask::Hint(hint.clone()));
@@ -500,7 +626,7 @@ impl State {
     }
 
     fn on_host(&mut self, params: &Params, action: &HostAction) {
-        match *action {
+        match action {
             HostAction::Build if self.word == Word::Unknown => self.word = Word::Built,
             HostAction::Abandon if matches!(self.word, Word::Unknown | Word::Built) => {
                 self.word = Word::Abandoned;
@@ -513,12 +639,70 @@ impl State {
                     && self
                         .last_hint_at
                         .and_then(|t| t.checked_add(params.age_threshold))
-                        .is_some_and(|deadline| deadline <= now) =>
+                        .is_some_and(|deadline| deadline <= *now) =>
             {
                 self.reask = Some(Reask::Age);
             }
+            HostAction::Tick(now) if self.handed_due(params, *now) => {
+                self.reask = Some(Reask::Reannounce);
+            }
+            HostAction::HandOver { instance, at } => self.on_hand_over(instance, *at),
+            HostAction::Discharge { instance } => self.on_discharge(instance),
+            HostAction::EndHold => {
+                if matches!(self.word, Word::Unknown | Word::Built | Word::Handed) {
+                    self.word = Word::Abandoned;
+                    self.handed_to.clear();
+                    self.clear_reannounce();
+                }
+            }
             _ => {}
         }
+    }
+
+    /// `Tracker.onHandOver`.
+    fn on_hand_over(&mut self, instance: &str, at: Timestamp) {
+        match self.word {
+            Word::Abandoned => {}
+            Word::Unknown | Word::Built | Word::Handed => {
+                self.word = Word::Handed;
+                renew(&mut self.handed_to, instance, at);
+                self.clear_reannounce();
+            }
+            _ => self.clear_reannounce(),
+        }
+    }
+
+    /// `Tracker.onDischarge`.
+    fn on_discharge(&mut self, instance: &str) {
+        if self.word == Word::Handed {
+            self.handed_to.retain(|h| h.instance != instance);
+            if self.handed_to.is_empty() {
+                self.word = Word::Built;
+            }
+        }
+    }
+
+    /// `Tracker.clearReannounce`.
+    fn clear_reannounce(&mut self) {
+        if self.reask == Some(Reask::Reannounce) {
+            self.reask = None;
+        }
+    }
+
+    /// `Tracker.oldestHandOver`.
+    fn oldest_hand_over(&self) -> Option<Timestamp> {
+        self.handed_to.iter().map(|h| h.at).min()
+    }
+
+    /// `Tracker.handedDue`: a `Handed` word whose oldest hand-over plus the
+    /// age threshold is at most `now`. Lean adds unbounded naturals; checked
+    /// addition keeps an overflowing deadline from becoming prematurely due.
+    fn handed_due(&self, params: &Params, now: Timestamp) -> bool {
+        self.word == Word::Handed
+            && self
+                .oldest_hand_over()
+                .and_then(|t| t.checked_add(params.age_threshold))
+                .is_some_and(|deadline| deadline <= now)
     }
 
     fn on_proof<H: Headers + ?Sized>(
@@ -540,6 +724,7 @@ impl State {
                 self.evidence = Some(checked);
                 self.suspect = false;
                 self.reask = None;
+                self.handed_to.clear();
                 Ok(())
             }
             Err(error) => {
@@ -681,7 +866,12 @@ impl State {
             return;
         }
         self.word = match verdict {
-            NodeVerdict::Rejected { reason } => Word::Rejected { reason },
+            // `Tracker.verdictHanded`: `rejected` empties the list,
+            // `conflicted` keeps it.
+            NodeVerdict::Rejected { reason } => {
+                self.handed_to.clear();
+                Word::Rejected { reason }
+            }
             NodeVerdict::Conflicted { mut competitors } => {
                 if let Word::Conflicted {
                     competitors: previous,
@@ -692,6 +882,16 @@ impl State {
                 Word::Conflicted { competitors }
             }
         };
+    }
+}
+
+/// `Tracker.renew`: the instance added at the end, or its time renewed in its
+/// place.
+fn renew(list: &mut Vec<HandedTo>, instance: &str, at: Timestamp) {
+    if let Some(held) = list.iter_mut().find(|h| h.instance == instance) {
+        held.at = at;
+    } else {
+        list.push(HandedTo::new(instance, at));
     }
 }
 

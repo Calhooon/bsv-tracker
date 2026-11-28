@@ -16,7 +16,9 @@ pub use events::{
 pub use evidence::{CheckError, CheckedProof, Header, HeaderError, Headers, Proof};
 pub use hints::{Hint, HintStatus, Verdict, VerdictError};
 pub use host::{Clock, HintSource, ProofFetcher, SpendCheck};
-pub use state::{Evidence, HostAction, Input, Mined, NodeVerdict, Params, Reask, State, Word};
+pub use state::{
+    Evidence, HandedTo, HostAction, Input, Mined, NodeVerdict, Params, Reask, State, Word,
+};
 pub use tracker::{ChainUpdate, Tracker};
 
 /// The height named by a BRC-74 path.
