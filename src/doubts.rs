@@ -23,6 +23,21 @@
 //! removes the pair of its key and reads no height; a key not open changes
 //! nothing.
 //!
+//! # The feed's named number (cut 1g)
+//!
+//! A feed may name the most keys it can have open at once; the host holds
+//! that number as [`Params::bound`], never as anything a snapshot or a row
+//! carries. [`step_checked`] and [`run_checked`] count the open keys after
+//! every row, not at a page's end, and answer [`Checked::Out`] when some row
+//! leaves more open than the number: the feed is out of its contract. The
+//! check drops no split and merges no key: the doubts in the answer are
+//! [`step`]'s and [`run`]'s, every row applied. With the number absent the
+//! answer is always [`Checked::Within`] and its doubts are [`step`]'s and
+//! [`run`]'s. What an out host then does (it reads no row and starts again
+//! from a snapshot at its cursor or past it) is the host's. The stack's
+//! `lean/Headers/Host.lean` section 12: [`over`] is its `over`, and
+//! [`run_checked`] its `trips` beside `run`.
+//!
 //! The doubts are a pure function of the feed's rows. No function here reads
 //! a header, a clock or the network, and none reads a root, a time or a chain
 //! work of an event: a `tip` row gives its height, a `fork` row its height
@@ -65,7 +80,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{ChainEvent, EventHeader, Hash, Height, SplitTip};
+use crate::{ChainEvent, EventHeader, Hash, Height, Params, SplitTip};
 
 /// A rival branch the host has been shown: the height at which it forked
 /// from the host's chain (one above the last common block, the feed's
@@ -456,4 +471,87 @@ where
 {
     rows.into_iter()
         .fold(ds.clone(), |acc, event| step(bounds, event, &acc))
+}
+
+/// Whether the open splits of `ds` number more than the feed's named number,
+/// [`Params::bound`]. With the number absent, never. The Lean's `over`.
+#[must_use]
+pub fn over(params: &Params, ds: &Doubts) -> bool {
+    params
+        .bound
+        .is_some_and(|bound| u64::try_from(ds.splits.len()).map_or(true, |n| u64::from(bound) < n))
+}
+
+/// The answer of a checked step or run: the doubts after every row read,
+/// and whether the feed stayed within its named number after each of them.
+///
+/// Either way the doubts are the unchecked fold's, every split kept.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[must_use = "an `Out` answer is the feed out of its contract"]
+pub enum Checked {
+    /// No row left more keys open than [`Params::bound`], or the number is
+    /// absent.
+    Within(Doubts),
+    /// Some row left more keys open than [`Params::bound`]: the feed is out
+    /// of its contract. The doubts after every row read, no split dropped.
+    Out(Doubts),
+}
+
+impl Checked {
+    /// The doubts after every row read, within or out.
+    #[must_use]
+    pub fn doubts(&self) -> &Doubts {
+        match self {
+            Self::Within(ds) | Self::Out(ds) => ds,
+        }
+    }
+
+    /// The doubts after every row read, within or out.
+    #[must_use]
+    pub fn into_doubts(self) -> Doubts {
+        match self {
+            Self::Within(ds) | Self::Out(ds) => ds,
+        }
+    }
+
+    /// Whether some row left more keys open than the named number.
+    #[must_use]
+    pub fn is_out(&self) -> bool {
+        matches!(self, Self::Out(_))
+    }
+}
+
+/// [`step`], then the count of open keys against [`Params::bound`]: one row
+/// that leaves more open than the number answers [`Checked::Out`].
+pub fn step_checked(bounds: &Bounds, params: &Params, event: &ChainEvent, ds: &Doubts) -> Checked {
+    let after = step(bounds, event, ds);
+    if over(params, &after) {
+        Checked::Out(after)
+    } else {
+        Checked::Within(after)
+    }
+}
+
+/// [`run`], with the count of open keys checked after every row: the answer
+/// is [`Checked::Out`] when some row of `rows` left more open than
+/// [`Params::bound`], even if a later row brings the count back within it.
+/// Every row is applied either way. The start `ds` itself is not counted:
+/// with no rows the answer is [`Checked::Within`]. The Lean's `trips`, beside
+/// `run`.
+pub fn run_checked<'a, I>(bounds: &Bounds, params: &Params, ds: &Doubts, rows: I) -> Checked
+where
+    I: IntoIterator<Item = &'a ChainEvent>,
+{
+    let (after, out) = rows
+        .into_iter()
+        .fold((ds.clone(), false), |(acc, out), event| {
+            let next = step(bounds, event, &acc);
+            let tripped = over(params, &next);
+            (next, out || tripped)
+        });
+    if out {
+        Checked::Out(after)
+    } else {
+        Checked::Within(after)
+    }
 }

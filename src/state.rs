@@ -229,6 +229,23 @@ impl Reask {
 pub struct Params {
     /// Seconds after the last hint before an announced or seen word is re-asked.
     pub age_threshold: Timestamp,
+    /// The feed's named number: the most split keys the header service's
+    /// contract says it can have open at once, as the host was told it.
+    /// `None` until the feed names one, and `None` is no check: the host of
+    /// today, row for row.
+    ///
+    /// With a number, a host whose open keys pass it after any row treats the
+    /// feed as out of its contract: [`doubts::step_checked`] and
+    /// [`doubts::run_checked`] answer [`doubts::Checked::Out`]. The number is
+    /// the host's own and is never read from a snapshot or a feed row: a check
+    /// against a number the checked party sends checks nothing. The tracker's
+    /// reducer does not read it. The stack's `StartParams.bound`
+    /// (`lean/Headers/Host.lean` section 12).
+    ///
+    /// [`doubts::step_checked`]: crate::doubts::step_checked
+    /// [`doubts::run_checked`]: crate::doubts::run_checked
+    /// [`doubts::Checked::Out`]: crate::doubts::Checked::Out
+    pub bound: Option<u32>,
 }
 /// The complete private state of one transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]

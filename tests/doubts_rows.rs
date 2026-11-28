@@ -17,7 +17,7 @@
 )]
 mod common;
 use bsv_tracker::doubts::{self, Bounds, Doubts, Rival};
-use bsv_tracker::ChainEvent;
+use bsv_tracker::{ChainEvent, Params};
 use common::*;
 use serde_json::Value;
 
@@ -107,6 +107,30 @@ fn rows_of_record_states() {
             "{name}: the state after the last row"
         );
         if case["fold"] == "run" {
+            // The check after every row: under the case's number, its `out`;
+            // under no number, within, and the doubts are `run`'s.
+            let (bound, out) = match case.get("bound") {
+                Some(Value::Null) => (None, case["out"].as_bool().unwrap()),
+                Some(n) => (Some(height(n)), case["out"].as_bool().unwrap()),
+                None => (None, false),
+            };
+            let params = Params {
+                age_threshold: 60,
+                bound,
+            };
+            let checked = doubts::run_checked(&bounds, &params, &from, &rows);
+            assert_eq!(checked.is_out(), out, "{name}: out under {bound:?}");
+            assert_eq!(checked.doubts(), &after, "{name}: the check drops nothing");
+            // `run_checked` is `step_checked` folded: out when some step is.
+            let mut stepped = from.clone();
+            let mut some_out = false;
+            for e in &rows {
+                let one = doubts::step_checked(&bounds, &params, e, &stepped);
+                some_out |= one.is_out();
+                assert_eq!(one.is_out(), doubts::over(&params, one.doubts()));
+                stepped = one.into_doubts();
+            }
+            assert_eq!(some_out, out, "{name}: the check is after every row");
             // `run` is `step` folded from the left, and `step` is `prune` of `raw`.
             let by_step = rows.iter().fold(from.clone(), |ds, e| {
                 let stepped = doubts::step(&bounds, e, &ds);
@@ -117,8 +141,8 @@ fn rows_of_record_states() {
         }
         ran += 1;
     }
-    assert_eq!(ran, 71, "the rows of record hold 71 cases");
-    assert_eq!(file["counts"]["cases"], 71);
+    assert_eq!(ran, 77, "the rows of record hold 77 cases");
+    assert_eq!(file["counts"]["cases"], 77);
 }
 
 const SPLIT_CASES: &str = include_str!("vectors/doubts/split_cases.txt");
@@ -275,4 +299,36 @@ fn stored_form_refuses() {
             "{why} must be refused: {text}"
         );
     }
+}
+
+/// The count against the named number: more than it is over, as many is
+/// within; the start is not counted; no number is no check.
+#[test]
+fn bound_counts_after_rows() {
+    let with = |bound| Params {
+        age_threshold: 60,
+        bound,
+    };
+    let two = Doubts::new(vec![], vec![("ka".into(), 50), ("kb".into(), 50)], 60, None);
+    assert!(!doubts::over(&with(None), &two));
+    assert!(!doubts::over(&with(Some(2)), &two));
+    assert!(doubts::over(&with(Some(1)), &two));
+    assert!(doubts::over(&with(Some(0)), &two));
+    assert!(!doubts::over(&with(Some(0)), &Doubts::cold(60)));
+    // A start over the number with no row read: `trips []` is false.
+    let none: [ChainEvent; 0] = [];
+    let checked = doubts::run_checked(&Bounds::B400, &with(Some(0)), &two, &none);
+    assert_eq!(checked, doubts::Checked::Within(two.clone()));
+    // A row that leaves it over is out, though it opens no key.
+    let one = doubts::step_checked(&Bounds::B400, &with(Some(1)), &tip_row(61), &two);
+    assert!(one.is_out());
+    assert_eq!(one.doubts().splits(), two.splits());
+    // The same split row twice adds nothing: a repeat never trips the check.
+    let rows = [
+        keyed_split_row("ka", 50, 52, 53),
+        keyed_split_row("ka", 50, 52, 53),
+    ];
+    let checked = doubts::run_checked(&Bounds::B400, &with(Some(1)), &Doubts::cold(60), &rows);
+    assert!(!checked.is_out());
+    assert_eq!(checked.doubts().splits(), [("ka".to_owned(), 50)]);
 }
