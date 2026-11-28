@@ -151,6 +151,13 @@ jobs:
             rows_of_record_asks | tee doubts_rows.out
           grep -q '^test result: ok. 2 passed; 0 failed; 0 ignored' doubts_rows.out
 
+      # tests/vectors/brc237/t64.json: BRC-237's transaction of 64 bytes
+      - name: The BRC-237 vector of 64 bytes
+        run: |
+          cargo test --locked --test proof_length -- --exact \
+            brc237_t64_is_never_proven | tee proof_length.out
+          grep -q '^test result: ok. 1 passed; 0 failed; 0 ignored' proof_length.out
+
   # The wallet, the overlay engine and the app layer host this crate in wasm.
   wasm32:
     runs-on: ubuntu-latest
