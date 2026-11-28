@@ -1,0 +1,26 @@
+# The stack's reducer's own run over twelve synthetic rows (no journal row): the fold `run` of bsv-stack-lean's lean/Headers/Doubts.lean under B400 from a cold start, through the keyed split arm (section 7d); the oracle that docs/DECISIONS-2026-10-19.md 30.7 names, both read at bsv-stack-lean@656c502a.
+# A row line is 'row <cursor> T <height>' (tip), 'row <cursor> S <key> <fork height> <tip> <tip>' (split, the key without split:), 'row <cursor> E <key> <fork height>' (splitResolved); its state line is the reducer's print after it, 'state <cursor> <line>'.
+row 1 T 100
+state 1 tip=100 splits=[] rivals=[] summary=-
+row 2 S aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 98 105 103
+state 2 tip=100 splits=[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:98] rivals=[98:103] summary=-
+row 3 S aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 96 106 104
+state 3 tip=100 splits=[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:96] rivals=[96:104] summary=-
+row 4 S aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 99 107 105
+state 4 tip=100 splits=[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:96] rivals=[99:105 96:104] summary=-
+row 5 S bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 96 101 100
+state 5 tip=100 splits=[bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:96 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:96] rivals=[99:105 96:104] summary=-
+row 6 E cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc 96
+state 6 tip=100 splits=[bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:96 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:96] rivals=[99:105 96:104] summary=-
+row 7 E aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0
+state 7 tip=100 splits=[bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:96] rivals=[99:105 96:104] summary=-
+row 8 S dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd 120 121 122
+state 8 tip=100 splits=[dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:120 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:96] rivals=[120:121 99:105 96:104] summary=-
+row 9 T 123
+state 9 tip=123 splits=[dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:120 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:96] rivals=[120:121 99:105 96:104] summary=-
+row 10 E bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 96
+state 10 tip=123 splits=[dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:120] rivals=[120:121 99:105 96:104] summary=-
+row 11 S dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd 120 121 122
+state 11 tip=123 splits=[dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd:120] rivals=[120:121 99:105 96:104] summary=-
+row 12 E dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd 120
+state 12 tip=123 splits=[] rivals=[120:121 99:105 96:104] summary=-
