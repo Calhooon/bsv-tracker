@@ -2,6 +2,84 @@
 
 ## [Unreleased]
 
+### Hosts: what a host of 0.9.0-beta.11 changes to take the tenth word (for #56)
+
+**A host of 0.9.0-beta.11 changes each exhaustive match on `Word`, and may start feeding three acts.** (1) `Word` has a tenth word, `Word::Handed`, and is still not `#[non_exhaustive]`, on purpose: every exhaustive match on `Word` outside the crate stops compiling (E0004) until it names the word, because each place that names words must decide what `handed` means for it. (2) A host that feeds no `HostAction::HandOver` never sees `Word::Handed`, and every word it sees is the word it saw at 0.9.0-beta.11: no other act, hint or evidence writes it (the Lean's `handedNamed_run` and the arms of `step` in `lean/Tracker.lean` at bsv-stack-lean `08ce467d`). Once a host feeds the act, a rule that reads a word by its text or through a wildcard arm reads `handed` as whatever that arm says, in silence; name each before feeding the act. (3) A re-ask of the new kind `Reask::Reannounce` asks the host to post the bytes again to each instance of `State::handed_to()`; it is never a proof request, so a host that fetches a proof for every due re-ask whatever its kind fetches the wrong thing for it. `Reask::LABELS` gains `"reannounce"` at its end. (4) `State::to_compact` writes version 2 of the compact form. Version 1 bytes a host stored still restore, as the same state with no instance; an older crate refuses version 2 bytes with `CompactError::UnknownVersion(2)` and restores nothing.
+
+```rust
+// 0.9.0-beta.11: nine arms, which no longer compile (E0004).
+fn label(word: &Word) -> &'static str {
+    match word {
+        Word::Unknown => "unknown",
+        Word::Built => "built",
+        Word::Announced => "announced",
+        Word::Seen => "seen",
+        Word::Mined(_) => "mined",
+        Word::Stale => "stale",
+        Word::Rejected { .. } => "rejected",
+        Word::Conflicted { .. } => "conflicted",
+        Word::Abandoned => "abandoned",
+    }
+}
+// This line: the tenth arm, and the host's decision for it.
+fn label(word: &Word) -> &'static str {
+    match word {
+        Word::Unknown => "unknown",
+        Word::Built => "built",
+        Word::Handed => "handed",
+        Word::Announced => "announced",
+        Word::Seen => "seen",
+        Word::Mined(_) => "mined",
+        Word::Stale => "stale",
+        Word::Rejected { .. } => "rejected",
+        Word::Conflicted { .. } => "conflicted",
+        Word::Abandoned => "abandoned",
+    }
+}
+```
+
+```rust
+// 0.9.0-beta.11: a rule that compares a word as a string. Once the host
+// feeds HandOver, a "handed" row falls outside this list in silence: it is
+// never loaded and never re-announced.
+const PENDING: [&str; 5] = ["unknown", "built", "announced", "seen", "stale"];
+// This line: the rule names the word, and its reader decides what it means.
+const PENDING: [&str; 6] = ["unknown", "built", "handed", "announced", "seen", "stale"];
+```
+
+```rust
+// 0.9.0-beta.11: a stored compact row, version 1, restored.
+let state = State::from_compact(&row)?; // row[0] == 1
+// This line: the same row restores to the same state, with no instance;
+// what the host writes back is version 2.
+let state = State::from_compact(&row)?; // row[0] == 1, still read
+assert!(state.handed_to().is_empty());
+let row = state.to_compact(); // row[0] == 2
+```
+
+```rust
+// This line: a host that hands the bytes over says so before the post
+// leaves, and says when an instance answered and keeps nothing.
+state.step(&params, &headers, Input::Host(HostAction::HandOver { instance: "arcade".into(), at: now }))?;
+state.step(&params, &headers, Input::Host(HostAction::Discharge { instance: "arcade".into() }))?;
+```
+
+### Added: the tenth word `handed`, its acts and its re-ask (for #56)
+
+- `Word::Handed`, mirrored from `Tracker.Word.handed` (`lean/Tracker.lean` at bsv-stack-lean `08ce467d`): the bytes left the host's hands for one or more named instances and none has answered. It claims nothing of the chain (`Word::chain` answers `None`). The doc of `Word` carries a `compile_fail,E0004` doctest of a nine-arm match.
+- `State::handed_to() -> &[HandedTo]`, the Lean's `State.handedTo`: the instances handed the bytes and not discharged, each with the time of its hand-over, in the order of each instance's earliest hand-over. `HandedTo { instance, at }` is `#[non_exhaustive]`, built by `HandedTo::new`, re-exported at the crate root, and stored by its serde form (`{"instance":"arcade","at":1700000000}`).
+- Three host acts (`HostAction` is `#[non_exhaustive]`, so they add without a break): `HostAction::HandOver { instance, at }` (`onHandOver`: `unknown`, `built` and `handed` read `handed`, the instance added or its time renewed in its place, a pending `reannounce` cleared; an `abandoned` state left whole; any other word keeps its word and only the pending `reannounce` is cleared), `HostAction::Discharge { instance }` (`onDischarge`: from `handed` the instance leaves the list, and the word returns to `built` when it is empty; every other word untouched) and `HostAction::EndHold` (`onEndHold`: `unknown`, `built` and `handed` read `abandoned`, the list emptied, a pending `reannounce` cleared; every other word untouched; a received payment's act, which the crate cannot tell from one of the host's own).
+- `Reask::Reannounce`, label `reannounce`, compact re-ask tag `7` (`Tracker.Reask.reannounce`): a host tick on a `handed` word whose oldest hand-over plus the age threshold is at most the tick's time (`handedDue`, checked addition); never on `built`, and the age re-ask keeps its arm before it.
+- The list in every other arm, as the Lean writes it: a hint raises `handed` to `announced` (an acceptance or a mempool presence) or `seen` (a sighting), and empties the list whenever it moves the word (`onHint`); no hint lowers `handed`. `abandon` stays refused on `handed`. A proof that writes `mined` empties the list (`onProof`); a node's `rejected` empties it and its `conflicted` keeps it (`verdictHanded`); a competitor's proof keeps it.
+- `bsv_tracker::doubts`: the guard's rule arm names `Word::Handed`, as the Lean's `spendable` does: `handed` is spendable under a rule that allows it and under no other, and reads no header. Nothing else in the module moves.
+- Tests: nine examples of the arms in `tests/transitions.rs`, one per row of the stack's `docs/p0/tracker-handed-proof-2026-11-27.md` section 3, and the stored form of `HandedTo`. `tests/labels.rs` names the new label. `src/tracker.rs` is untouched.
+
+### Changed: the compact form's version 2 (for #56)
+
+- `COMPACT_VERSION` is 2. Version 2 is version 1's layout with word tag `9` (handed), re-ask tag `7` (reannounce) and three fields after the re-ask: the instances (a varint count, each a string and a varint time), the record of a conflict's competitors and the word held when it began. The last two are held empty in this release (a count of `0` and a `0`), and the reader refuses any other value there. Version 1 still reads, as the same state with the three fields empty.
+- Refused as `CompactError::Malformed`: word tag `9` and re-ask tag `7` under version 1, re-ask tag `8`, a `handed` word with no instance, an instance named twice, instances beside any word but `handed` and `conflicted` (a conflict that began from `handed` keeps its list), and a count of competitors or a prior word that is not `0`. `CompactError` gains no variant.
+- `tests/compact_golden.rs`: the ten goldens re-recorded in a commit of their own, each moved only by its opening byte, `01` to `02`, and three bytes `000000` at its end; `version_1_bytes_still_restore` restores each of the ten version 1 strings, kept verbatim, to the state built today, and `version_2_is_version_1_with_three_empty_fields` pins the relation. `tests/compact.rs`: `version_2_refusals` pins each refusal and the bytes of a `handed` state; two tests that read version 1's layout move by their inputs and keep their answers (version 3 is the unread version; word tag `10` is the unknown tag; the hints count is six bytes from the end).
+
 ## [0.9.0-beta.11] - 2026-11-28
 
 ### Hosts: what a host of 0.9.0-beta.10 changes to take this line (for #51)
