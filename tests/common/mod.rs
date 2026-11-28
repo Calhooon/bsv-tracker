@@ -195,6 +195,28 @@ pub fn resolved_row(fh: u32) -> ChainEvent {
         fork_height: fh,
     }
 }
+/// The Lean's `splitRow k fh lo hi` under the key `k` (`split:k` on the
+/// wire): the witness tips at `lo` and `hi`.
+pub fn keyed_split_row(k: &str, fh: u32, lo: u32, hi: u32) -> ChainEvent {
+    let tip = |block: u64, height: u32, rung: &str| SplitTip {
+        hash: hash(block),
+        height,
+        chain_work: hash(u64::from(height) + 1),
+        rungs: vec![rung.into()],
+    };
+    ChainEvent::Split {
+        key: format!("split:{k}"),
+        fork_height: fh,
+        tips: [tip(300, lo, "r1"), tip(301, hi, "r2")],
+    }
+}
+/// The Lean's `.splitResolved k fh` under the key `k` (`split:k` on the wire).
+pub fn keyed_resolved_row(k: &str, fh: u32) -> ChainEvent {
+    ChainEvent::SplitResolved {
+        key: format!("split:{k}"),
+        fork_height: fh,
+    }
+}
 pub fn mined(s: &State, height: u32) {
     assert_eq!(s.word().height(), Some(height), "word: {:?}", s.word());
     let evidence = s.evidence().unwrap();

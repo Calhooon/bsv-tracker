@@ -1,7 +1,7 @@
 //! The doubts' rows of record: `tests/vectors/doubts/rows_of_record.json`,
-//! 53 cases taken from the `#guard` rows of bsv-stack-lean at `7213ef4a`
-//! (`lean/Headers/Doubts.lean` section 8 and `lean/Headers/Host.lean`
-//! section 11), and the stored form of `Doubts`. No case is a journal row.
+//! cases taken from the `#guard` rows of bsv-stack-lean (`lean/Headers/Doubts.lean`
+//! and `lean/Headers/Host.lean`; the file's `source` names the commit and the
+//! sections), and the stored form of `Doubts`. No case is a journal row.
 //!
 //! Each case names a settled line, a fold (`run`, or `raw` alone for the
 //! Lean's `runUnpruned`), a start, its rows in the Lean's helpers' terms and
@@ -33,6 +33,15 @@ fn pair(value: &Value) -> Rival {
     Rival::new(height(&pair[0]), height(&pair[1]))
 }
 
+fn split(value: &Value) -> (String, u32) {
+    let pair = value.as_array().expect("an open split is [key, fork]");
+    assert_eq!(pair.len(), 2, "an open split is [key, fork]: {value}");
+    (
+        pair[0].as_str().expect("a key").to_owned(),
+        height(&pair[1]),
+    )
+}
+
 fn start(value: &Value) -> Doubts {
     let start = value.as_object().expect("a start is an object");
     assert_eq!(start.len(), 1, "a start is cold or a doubts value: {value}");
@@ -43,12 +52,7 @@ fn start(value: &Value) -> Doubts {
     assert_eq!(ds.len(), 4, "a doubts value has four parts: {value}");
     Doubts::new(
         ds["rivals"].as_array().unwrap().iter().map(pair).collect(),
-        ds["splits"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(height)
-            .collect(),
+        ds["splits"].as_array().unwrap().iter().map(split).collect(),
         height(&ds["tip"]),
         match &ds["gone"] {
             Value::Null => None,
@@ -60,14 +64,20 @@ fn start(value: &Value) -> Doubts {
 fn row(value: &Value) -> ChainEvent {
     let row = value.as_array().expect("a row is an array");
     let kind = row[0].as_str().expect("a row begins with its kind");
+    if let ("split" | "resolved", Some(key)) = (kind, row.get(1).and_then(Value::as_str)) {
+        let n: Vec<u32> = row[2..].iter().map(height).collect();
+        return match (kind, n.as_slice()) {
+            ("split", [fh, lo, hi]) => keyed_split_row(key, *fh, *lo, *hi),
+            ("resolved", [fh]) => keyed_resolved_row(key, *fh),
+            _ => panic!("a row of a shape this test does not know: {value}"),
+        };
+    }
     let n: Vec<u32> = row[1..].iter().map(height).collect();
     match (kind, n.as_slice()) {
         ("tip", [h]) => tip_row(*h),
         ("fork", [f, t, competitor]) => fork_row(*f, *t, *competitor),
         ("reorg", [fh, old, nt]) => reorg_row(*fh, *old, *nt),
         ("reorg_none", [fh, nt]) => reorg_none(*fh, *nt),
-        ("split", [fh, h1, h2]) => split_row(*fh, *h1, *h2),
-        ("resolved", [fh]) => resolved_row(*fh),
         _ => panic!("a row of a shape this test does not know: {value}"),
     }
 }
@@ -76,7 +86,7 @@ fn row(value: &Value) -> ChainEvent {
 #[test]
 fn rows_of_record_states() {
     let file: Value = serde_json::from_str(ROWS_OF_RECORD).unwrap();
-    assert_eq!(file["schema"], "bsv-tracker-doubts-rows/1");
+    assert_eq!(file["schema"], "bsv-tracker-doubts-rows/2");
     let cases = file["cases"].as_array().unwrap();
     let mut ran = 0;
     let mut names = std::collections::BTreeSet::new();
@@ -120,10 +130,10 @@ fn stored_form_round_trips() {
             Doubts::cold(0),
         ),
         (
-            r#"{"rivals":[{"fork":101,"tip":101},{"fork":95,"tip":99}],"splits":[95],"tip":103,"gone":null}"#,
+            r#"{"rivals":[{"fork":101,"tip":101},{"fork":95,"tip":99}],"splits":[["k95",95]],"tip":103,"gone":null}"#,
             Doubts::new(
                 vec![Rival::new(101, 101), Rival::new(95, 99)],
-                vec![95],
+                vec![("k95".into(), 95)],
                 103,
                 None,
             ),
@@ -146,7 +156,7 @@ fn stored_form_round_trips() {
     // The readers give back what `new` was given.
     let (_, ds) = &golden_parts();
     assert_eq!(ds.rivals(), [Rival::new(405, 406)]);
-    assert_eq!(ds.splits(), [7]);
+    assert_eq!(ds.splits(), [("kb".into(), 7), ("ka".into(), 7)]);
     assert_eq!(ds.tip(), 6);
     assert_eq!(ds.gone(), Some(&Rival::new(5, 5)));
     assert_eq!(
@@ -156,17 +166,17 @@ fn stored_form_round_trips() {
     );
     assert_eq!(
         ds.to_string(),
-        "tip=6 splits=[7] rivals=[405:406] summary=5:5"
+        "tip=6 splits=[kb:7 ka:7] rivals=[405:406] summary=5:5"
     );
     assert_eq!(Bounds::B400, Bounds::new(400));
 }
 
 fn golden_parts() -> (&'static str, Doubts) {
     (
-        r#"{"rivals":[{"fork":405,"tip":406}],"splits":[7],"tip":6,"gone":{"fork":5,"tip":5}}"#,
+        r#"{"rivals":[{"fork":405,"tip":406}],"splits":[["kb",7],["ka",7]],"tip":6,"gone":{"fork":5,"tip":5}}"#,
         Doubts::new(
             vec![Rival::new(405, 406)],
-            vec![7],
+            vec![("kb".into(), 7), ("ka".into(), 7)],
             6,
             Some(Rival::new(5, 5)),
         ),
@@ -205,7 +215,23 @@ fn stored_form_refuses() {
         ),
         (
             "a height past u32",
-            r#"{"rivals":[],"splits":[4294967296],"tip":6,"gone":null}"#,
+            r#"{"rivals":[],"splits":[["ka",4294967296]],"tip":6,"gone":null}"#,
+        ),
+        (
+            "an open split as a bare fork height (lane 1's form)",
+            r#"{"rivals":[],"splits":[95],"tip":6,"gone":null}"#,
+        ),
+        (
+            "an open split without its fork height",
+            r#"{"rivals":[],"splits":[["ka"]],"tip":6,"gone":null}"#,
+        ),
+        (
+            "an open split with a third part",
+            r#"{"rivals":[],"splits":[["ka",5,6]],"tip":6,"gone":null}"#,
+        ),
+        (
+            "an open split whose key is not text",
+            r#"{"rivals":[],"splits":[[5,5]],"tip":6,"gone":null}"#,
         ),
     ];
     for (why, text) in refused {
