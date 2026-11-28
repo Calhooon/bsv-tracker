@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added: the direction rule and its two checks
+
+- The owner's ruling of 2026-11-18, as bsv-wallet-cli holds it: every change is born on `beta`, and `main` takes a `git cherry-pick -x` of a `beta` commit in six classes alone (`RELEASING.md`, "The direction rule"). `.github/workflows/lines.yml` runs `main-in-beta` on every pull request into `beta` and every push to `beta` (each commit of `main` after the merge base `86f193b8` is on `beta` by sha, patch or cherry-pick line, or is a hop commit, as the dependency bot's `Cargo.lock` moves are), `beta-born` on every pull request into `main`, and `lines-selftest`, the 26 planted cases of `.github/ci/test_lines.py`, on every event. No source line, test or public item of the crate changes.
+
 ### Added: the doubts' state and reducer (for #51)
 
 - `bsv_tracker::doubts`, a new public module beside the tracker's reducer: a host's doubts, folded from the header service's feed one row at a time. It mirrors `lean/Headers/Doubts.lean` of bsv-stack-lean at `7213ef4a` under the Lean's names. Nothing is re-exported at the crate root, and no existing item, serde form or compact byte moves: `State`, `Tracker`, `Params`, `ChainEvent`, the decoder and `tests/compact_golden.rs` are untouched, and a host changes nothing until it calls the module.
