@@ -1369,3 +1369,45 @@ $ CARGO_TARGET_DIR=/Users/johncalhoun/bsv/targets/a6/bsv-tracker-envelope-target
 [X] Gate, each exit 0, logs under `/Volumes/Lanes/out/bsv-tracker/tracker-v2/`: `cargo fmt --check`; `cargo +1.99.0 clippy --all-targets -- -D warnings` (and the default stable); `cargo test`, 43 passed (chain_events 14, properties 4, scenarios 7, splits 4, transitions 9, verdicts 2, doc tests 3); `cargo +1.88.0 check`; `cargo build --target wasm32-unknown-unknown --features wasm`; `actionlint .github/workflows/ci.yml`. The `vectors` job's command, run locally: `test result: ok. 8 passed`.
 
 [D] The two split vectors are synthetic in the documented shape: the emitter publishes no literal example and no beta envelope was captured. The decoder refuses a version-1 kind under `v: 2`, which the emitter's own reader admits; the emitter never writes one. The Lean machine has no split input, so the rule is a projection of the ruling, unproved in Lean. Unverified: live delivery from the beta, a host adapter, the stack's corpus scenario for the rule.
+
+## The doubts' test of record: the journals' states after every row (#51, 2026-11-28)
+
+[X] Worktree `bsv-tracker-trk-51-2`, branch `lane/trk-51-2`, base `3e792c1` (beta, with the doubts' state and reducer of #51 landed). The test is `tests/journal_states.rs`; the reducer is `bsv_tracker::doubts`, unchanged by this section.
+
+[SRC] The stack: bsv-stack-lean at `7213ef4a`, `lean/Headers/Doubts.lean` (`raw`, `prune`, `step`, `run`) and the journal driver `tools/journal/JournalRun.lean`, whose line the states files hold: `<cursor> tip=<t> splits=[..] rivals=[..] summary=<fork:tip or ->`. The totals are those of `docs/DECISIONS-2026-10-19.md` 28.22: production 6,254 rows, the beta 39,686 rows, eleven of them unreadable.
+
+The journals and the states files are private to the estate and nothing of them is committed: no row, no states line, no cursor, hash or height, no fixture cut from them. The test reads them in place from `BSV_TRACKER_JOURNALS_DIR` (`production.events.jsonl`, `beta.events.jsonl`) and `BSV_TRACKER_JOURNAL_STATES_DIR` (`production.states.txt`, `beta.states.txt`).
+
+What the test does, for each journal: from `Doubts::cold(0)` under `Bounds::new(400)`, each row (an object of exactly `cursor`, a string of digits, and `event`) is decoded by the crate's own `decode_envelope`, folded by `doubts::step`, and compared with the next states line two ways: the ruled comparison (the cursor, the tip, the splits in order, the rivals as a set with no pair twice, the summary) and the line byte for byte against `format!("{cursor} {ds}")`, which pins the rivals' order. A delivered `unreadable` row is not an envelope; it is counted and skipped, as the driver skips it, and consumes no states line. A decoder refusal, a kind the driver writes no line for, a states line too many or too few, or a total other than the stack's fails the test. A failure names the journal, the line's number and the names of the fields that differ (`cursor`, `tip`, `splits`, `rivals`, `summary`, `line`), never a value. `a_wrong_line_is_named_by_its_fields` pins that naming on a hand-built `Doubts` and hand-written lines, with nothing of a journal.
+
+With `BSV_TRACKER_JOURNALS_DIR` unset (CI's run) the test prints its `SKIPPED` line and passes; with the journals named and `BSV_TRACKER_JOURNAL_STATES_DIR` unset it fails, so a half-named run never reads as green.
+
+[X] The run of record, on the host that mounts both folders (the SDK of rule 10 named for the link):
+
+```text
+$ BSV_TRACKER_JOURNALS_DIR=<journals> BSV_TRACKER_JOURNAL_STATES_DIR=<states> \
+    cargo test --locked --test journal_states -- --nocapture
+running 2 tests
+test a_wrong_line_is_named_by_its_fields ... ok
+JOURNAL STATES production: rows 6254, unreadable skipped 0, folded 6254, states lines compared 6254, equal 6254 (the rivals as a set), byte-equal 6254
+JOURNAL STATES beta: rows 39686, unreadable skipped 11, folded 39675, states lines compared 39675, equal 39675 (the rivals as a set), byte-equal 39675
+test journals_reproduce_the_states_after_every_row ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.78s
+```
+
+[X] With the variable unset:
+
+```text
+$ cargo test --locked --test journal_states
+running 2 tests
+SKIPPED journals_reproduce_the_states_after_every_row: BSV_TRACKER_JOURNALS_DIR is unset (the header service's journals are private to the estate; nothing of them is committed)
+test journals_reproduce_the_states_after_every_row ... ok
+test a_wrong_line_is_named_by_its_fields ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+[X] Every row of both journals but the eleven unreadable ones passes the crate's decoder, and every folded row's state equals its states line both ways: the reducer reproduces the state after every row of the header service's two journals from a cold start.
+
+[D] The journals exercise `tip`, `fork`, `reorg` and `tipAge` rows alone, and no `reorg` among them removes more than one header; the `split` and `splitResolved` arms, a reorg of several headers or of none, and a start that is not cold are pinned by `tests/doubts_rows.rs`, not here.

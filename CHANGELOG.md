@@ -15,6 +15,11 @@
 - `Display` for `Doubts`: `tip=103 splits=[] rivals=[101:101] summary=-`, the lists in their order, the summary as `fork:tip` or `-`.
 - Tests: `tests/vectors/doubts/rows_of_record.json` (53 cases taken from the `#guard` rows of `lean/Headers/Doubts.lean` section 8 and `lean/Headers/Host.lean` section 11 at `7213ef4a`; no journal row) and `tests/doubts_rows.rs`: `rows_of_record_states` (every case's printed state after its last row, 53 counted), `stored_form_round_trips` and `stored_form_refuses`. The file's `asks` are for the depth functions, which are not in this change. The CI job `vectors` runs `rows_of_record_states` by name and counts its pass.
 
+### Added: the doubts' test of record (for #51)
+
+- `tests/journal_states.rs`, `journals_reproduce_the_states_after_every_row`: the header service's two journals, folded from `Doubts::cold(0)` under `Bounds::new(400)` with the crate's own `decode_envelope` and `doubts::step`, reproduce the stack's journal driver's state after every row (bsv-stack-lean at `7213ef4a`, `tools/journal/JournalRun.lean`): each states line equal by the ruled comparison (the cursor, the tip, the splits, the rivals as a set, the summary) and byte for byte. The journals are private to the estate and read in place from `BSV_TRACKER_JOURNALS_DIR` and `BSV_TRACKER_JOURNAL_STATES_DIR`; nothing of them is committed, and a failure names a line's number and the fields that differ, never a value. With the variable unset (CI's run) the test prints a `SKIPPED` line and passes. The run of record: production 6,254 rows, 6,254 states lines equal and byte-equal; the beta 39,686 rows, 11 unreadable deliveries skipped as the driver skips them, 39,675 states lines equal and byte-equal (`docs/VERIFICATION.md`).
+- `a_wrong_line_is_named_by_its_fields`: the comparison's witness on a hand-built `Doubts` and hand-written lines, run everywhere. No source line or public item changes.
+
 ## [0.9.0-beta.10] - 2026-11-18
 
 The pin to bsv-rs 0.9.0-beta.10, bsv-rs's security prerelease, so that the toolbox's and the CLI's beta lines can follow onto it through this crate. No behaviour moves and no public item changes: every test of the base keeps its name and its answer, the compact bytes are unchanged (`tests/compact_golden.rs`), and a host changes nothing at this prerelease.
