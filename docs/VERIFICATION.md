@@ -1512,3 +1512,93 @@ What changed since the plan wrote appendix C, mirrored as the Lean states it now
 - The Lean's guards name a word `handed` that the crate has no word for; the mirrors read the crate's words. The Lean compares a snapshot's tip hash with `==`; the crate compares it in either case; the draw's hashes are in lower case, where the two agree.
 
 Not mirrored here: `Host.lean`'s hosts over a journal (`host_is_run`, `two_hosts`, `reachC_holds`, `no_silent_drop`, `reachC_safe` and the rest of its `Reach` and `ReachC` statements), the recheck after a gap, the impossibility of section 8 and the load of a page read: they quantify over the host's journals and page reads, which are the host's, and the crate holds no journal. `fold_coversK` from a snapshot other than the least is not drawn. The pair of `Snapshot.least` over a run, which the Lean leaves owed, is not a theorem and has no test.
+
+## The length rule as properties and goldens (GHSA-jjhc-7hvh-c3hm, BRC-237, 2026-11-28)
+
+A transaction of exactly 64 bytes is never taken as proven by a merkle path (BRC-237's condition for an anchor; bsv-rs enforces it in its own verifier, its public advisory GHSA-jjhc-7hvh-c3hm). The crate measures the transaction: `State::tx_len`, the two constructors of `Proof` and the doors that read a length. This section is the rule's randomized statements and its compact goldens; the tables and the witness are `tests/measure.rs` and `tests/proof_length.rs`.
+
+[SRC] The stack: bsv-stack-lean at `901e9dfa` (`901e9dfaac42b5dafdf5d5f2c552933dc1c28cd4`), `docs/DECISIONS-2026-10-19.md` 32.13 for the rule's words. `lean/Tracker.lean` there holds no measured length (no `txLen` in any Lean file): every name in the table below is ahead of the Lean and a proposal, apart from `txLen`, whose name is ruled.
+
+[X] Worktree `bsv-tracker-trk-64-3`, branch `lane/trk-64-3`, from beta with the measure (lane 1) and the constructors and doors (lane 2) landed. A tests-only change: no line of `src` moves. The test is `tests/length_properties.rs`: ten tests, 256 cases each from the explicit ChaCha seed with no failure persistence, as `tests/properties.rs`.
+
+The draw: a subject (`Subject` in `tests/common/mod.rs`: a txid alone, or bytes of 63, 64, 65 or 191, born measured or born from its txid), held by a `Tracker` beside a mined bystander, and up to 59 acts among: its own proof built from its bytes, stated at its length, stated at a length drawn among 0, 63, 64, 65, 190 and 191, stated at a length that is not its own, or taken out of a record; a competitor's proof from its bytes, stated, or out of a record; the measure (`Tracker::track_bytes`); a restore (`Tracker::restore`) of the state's own version 2 bytes, of its version 1 bytes, of a row born apart from its txid and mined on a length that is not its own (through either version), of the state's bytes with the length field set by hand, or of a measured birth; and a host act, a hint, a chain event, a recheck and a verdict. Headers carry each proof's root, or cannot answer. Each statement is asked after every act.
+
+| test | the theorem's proposed name | what is checked |
+|---|---|---|
+| `ambiguous_never_mined` | I1 `ambiguous_never_mined` | a state whose length reads 64 does not read `mined` or `stale` and holds no record, whatever the road (either constructor, a record's proof, a competitor's, the measure, a restore through either version, a hand-set field); a state that held a proof and is measured at 64 occurs (checked) |
+| `txLen_once` | I2 `txLen_once` | a length once held is held after every later act, refusals and restores included |
+| `txLen_only_by_bytes` | I3 `txLen_only_by_bytes` | the length moves only by the measure, by a proof built from the subject's bytes (to the count of those bytes), or by a restore of a row that carries a length (to that length) |
+| `mined_read_a_length` | I4 `mined_read_a_length` | a proof that writes a fresh `mined` word read a length: on a measured state the stated length equals the measure; on an unmeasured state the length is absent after it exactly when it was stated; a record's proof never mines an unmeasured state (`Unmeasured`); a fresh `mined` word comes from a proof or a restore alone; both unmeasured roads occur (checked) |
+| `mismatch_refused` | I5 `mismatch_refused` | a measured state offered a proof stated at another length answers `LengthMismatch { measured, offered }`, keeps its word and record and asks again (`Reask::ProofFailed`); measured at 64 it answers `AmbiguousLength` and is left whole |
+| `competitor_needs_bytes` | I6 `competitor_needs_bytes` | a competitor's proof not built from its bytes is `Unmeasured`, the word and the record kept; one built from its bytes meets no length fault, and is taken by a state measured at 64 (checked): the competitor is judged by its own length |
+| `measure_moves_no_word` | I7 `measure_moves_no_word` | the measure changes the length alone, except at 64 on an unmeasured state that held a proof: the fault road (the keeper's K4), where the call returns `AmbiguousLength` AND the record is dropped, a `mined` or `stale` word reads `unknown` with no mark and no re-ask, and any other word keeps its word and re-ask (occurs, checked); a state holding another length refuses the measure, `LengthMismatch`, left whole |
+| `record_carries_no_length` | I8 `record_carries_no_length` | a record's proof, as built and as restored from the bytes, is refused `Unmeasured` by `Headers::check`, by `doubts::may_enter` and by an unmeasured state; a state measured at its own length takes it (occurs, checked), one measured at 64 answers `AmbiguousLength` |
+| `restore_leaves_the_index_describing_the_held_state` | none (the tracker's indexes are the crate's own) | for every pair of a held state and a restored row (the row stepped apart, then through version 2 bytes, version 1 bytes, or a hand-set length field): after `Tracker::restore` the tracker's indexes describe the state it then holds, read through its public doors on a copy (the height a fork reaches it at, the header hash an invalidation reaches it by, whether a new tip reaches it); on `Ok` the replaced state is returned; on `AmbiguousLength` the row is held unsaid; on `LengthMismatch` nothing moved; the bystander's indexes do not move; each of the three roads occurs (checked) |
+| `every_act_leaves_the_index_describing_the_state` | none | the same reading of the indexes after every act of the trace |
+
+The generators of `tests/properties.rs` and `tests/compact.rs` draw the same subject, its own proof by either constructor at a length that agrees with it or not, and the measure at random places. The four properties of `tests/properties.rs` keep their names and statements; `mined_implies_checked_proof` also reads that a `mined` state is never measured at 64, `hint_changes_no_chain_word` that a hint moves no length, and `same_evidence_same_word` that two states fed the same evidence hold the same length. In `stale_iff_header_inactive` half of the mined words are tracked from their bytes and measured by their proof and some states are measured at 64, which take no proof. `compact_round_trip_over_256_random_states` reads the length back and reaches unmeasured states, states measured at 64 and measured `mined` states (checked); `every_proper_prefix_is_truncated_and_a_suffix_is_trailing` runs over the generator as well as its fixed state, so a prefix that ends inside the length field is asked.
+
+Three goldens in `tests/compact_golden.rs`, each beside the bytes of a twin born from the same txid without its bytes and stepped alike, which differ in the last field alone:
+
+| golden | the state | the length field |
+|---|---|---|
+| `measured_unknown` | `State::measured(&tx_bytes(7, 191))` | `01bf01` |
+| `measured_at_64` | `State::measured(&tx_bytes(7, 64))`, built | `0140` (no proof beside it, so it is read) |
+| `mined_measured_by_its_proof` | born from `txid_of(&tx_bytes(7, 191))`, mined by `proof_of` at height 10; its twin mined by the same path on a stated length | `01bf01`; the record carries no length, so the rest is the twin's |
+
+The txids of the two byte strings were checked apart from the crate with python's hashlib (the double SHA-256 reversed): `b6e3a84f...c109` for 191 bytes and `7f6b1704...98b7` for 64.
+
+The witness, BRC-237's `T64`, as lane 2 recorded it (`tests/proof_length.rs`, `brc237_t64_is_never_proven`). At its base `bd95b1e`, through the constructor that took a txid alone, before the constructors read a length:
+
+```text
+BASE WITNESS: len 64 txid 6444bf849ea4136a9608b60996cc7d552d65d94c7183ae4f71a678add2de1e02: step Ok(()), word mined Some(950008)
+```
+
+At its tip, `Proof::new(T64, path)` and `Proof::with_stated_len(txid, 64, path)` answer `Err(AmbiguousLength)`, and `State::measured(T64)` refuses a proof stated at 63 or 65 and stays whole:
+
+```text
+$ cargo test --locked --test proof_length -- --exact brc237_t64_is_never_proven
+test brc237_t64_is_never_proven ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+```
+
+[X] The run:
+
+```text
+$ cargo test --locked --test length_properties
+running 10 tests
+test ambiguous_never_mined ... ok
+test competitor_needs_bytes ... ok
+test every_act_leaves_the_index_describing_the_state ... ok
+test measure_moves_no_word ... ok
+test mined_read_a_length ... ok
+test mismatch_refused ... ok
+test record_carries_no_length ... ok
+test restore_leaves_the_index_describing_the_held_state ... ok
+test txLen_once ... ok
+test txLen_only_by_bytes ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.57s
+```
+
+In the full suite (`cargo test --locked`) the total is 210 passed, 0 failed, against 197 at the base: these ten and the three goldens.
+
+[X] Twelve faults planted in the arms of `src`, one at a time and reverted after (`git diff --stat -- src` empty at the end), each failing some of the tests (the full suite run each time):
+
+| the fault | failed |
+|---|---|
+| the proof door of a state measured at 64 takes the proof | `ambiguous_never_mined` and the nine other properties; `stale_iff_header_inactive`; `a_state_measured_at_64_refuses_every_proof`, `measure_after_birth`, `the_proof_door_pairings`, `brc237_t64_is_never_proven` |
+| `Proof::with_stated_len` takes a stated 64 | `constructors_by_length`, `brc237_t64_is_never_proven` |
+| `Proof::new` takes 64 bytes | the ten properties; `mined_implies_checked_proof`, `compact_round_trip_over_256_random_states`, `constructors_by_length`, `brc237_t64_is_never_proven` |
+| a measured state takes a proof stated at another length | `mismatch_refused`, `mined_read_a_length`, `the_proof_door_pairings`, `a_measured_state_against_a_stated_length_proof` |
+| a proof built from bytes does not measure an unmeasured state | `mined_read_a_length`, `mined_measured_by_its_proof`, `the_proof_door_pairings` |
+| the competitor door takes a stated proof | `competitor_needs_bytes`, `the_competitor_door` |
+| the compact decoder reads a length of 64 beside a stored proof | `ambiguous_never_mined`, `tx_length_field` |
+| a measure of 64 on a state that held a proof does not unsay it | the ten properties; `mined_implies_checked_proof`, `compact_round_trip_over_256_random_states`; `measure_after_birth`, `a_measure_of_64_on_a_tracked_mined_word_returns_the_fault_and_moves_the_indexes`, `a_mined_row_of_version_1_restores_unmeasured_and_stays_mined`, `restore_carries_the_held_measure` |
+| `Tracker::restore` does not carry the held measure | `txLen_once`, `txLen_only_by_bytes`, `restore_leaves_the_index_describing_the_held_state`, `restore_carries_the_held_measure` |
+| an unmeasured state takes a record's proof | `record_carries_no_length`, `mined_read_a_length`, `the_proof_door_pairings` |
+| `Headers::check` takes a record's proof | `record_carries_no_length`, `the_doors_with_no_state` |
+| `doubts::may_enter` takes a record's proof | `record_carries_no_length`, `the_doors_with_no_state` |
+| `Tracker::restore` takes a row of another length | `txLen_once`, `restore_leaves_the_index_describing_the_held_state`, `restore_carries_the_held_measure` |
+
+What no length rule closes, a transaction of any length posing one level below a real 64-byte leaf, is not a statement here and is not claimed by any test.
