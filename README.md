@@ -79,6 +79,70 @@ and a status the reader refuses is surfaced, never read as
 in declaration order, the compact form's tag order) never changes and is
 never reused; a later minor only appends.
 
+## The doubts
+
+`bsv_tracker::doubts` holds what a host's header feed has shown it and not
+yet settled: the rival branches of its forks and reorgs, its open splits and
+its tip. A host folds each feed row into them with `doubts::step`, beside the
+tracker's own step, and reads the depth it may trust while they stand with
+`doubts::eff_depth`; `doubts::spendable_eff` is the spend guard on that depth.
+The fold reads no header, clock or network, and nothing a host already calls
+changes its answer. `docs/DOUBTS.md` is the page: every public item beside the
+Lean name it mirrors, the stored form, the printed line, the feed's named
+number and the snapshot.
+
+```rust
+use bsv_rs::transaction::{MerklePath, MerklePathLeaf};
+use bsv_tracker::doubts::{self, Bounds, Doubts};
+use bsv_tracker::{decode_envelope, Evidence, Header, HeaderError, Headers, Height};
+use bsv_tracker::{Input, Params, Proof, State};
+
+// The host's own verified headers: the block at 100, the tip at 105.
+struct Verified(Header);
+impl Headers for Verified {
+    fn header_at(&self, height: Height) -> Result<Option<Header>, HeaderError> {
+        Ok((height == 100).then(|| self.0.clone()))
+    }
+    fn tip_height(&self) -> Result<Height, HeaderError> {
+        Ok(105)
+    }
+}
+
+// A coin of a transaction mined at 100, its proof checked against them.
+let txid = "aa".repeat(32);
+let leaves = vec![MerklePathLeaf::new_txid(0, txid.clone()), MerklePathLeaf::new(1, "bb".repeat(32))];
+let proof = Proof::new(&txid, MerklePath::new(100, vec![leaves])?)?;
+let headers = Verified(Header { hash: "cc".repeat(32), merkle_root: proof.root()? });
+let params = Params::new(3600, 3); // the age threshold in seconds, the spend depth
+let mut coin = State::new(&txid);
+coin.step(&params, &headers, Input::Evidence(Evidence::Proof(proof)))?;
+
+// The feed splits at 100: two branches past it, each with its witness tip at 101.
+let key = format!("split:{}", "dd".repeat(32));
+let tip = |hash: &str, rung: &str| {
+    format!(r#"{{"hash":"{}","height":101,"chainWork":"{}","rungs":["{rung}"]}}"#, hash.repeat(32), "0e".repeat(32))
+};
+let split = format!(
+    r#"{{"v":2,"kind":"split","key":"{key}","forkHeight":100,"tips":[{},{}]}}"#,
+    tip("e1", "a"),
+    tip("e2", "b")
+);
+let resolved = format!(r#"{{"v":2,"kind":"splitResolved","key":"{key}","forkHeight":100}}"#);
+
+let mut ds = Doubts::cold(105);
+ds = doubts::step(&Bounds::B400, &decode_envelope(split.as_bytes())?, &ds);
+// An open split at or below the coin's height: nothing there is deep.
+assert_eq!(doubts::eff_depth(&headers, &ds, 100)?, 0);
+assert!(!doubts::spendable_eff(&params, &headers, &ds, None, &coin)?);
+
+ds = doubts::step(&Bounds::B400, &decode_envelope(resolved.as_bytes())?, &ds);
+// Resolved: the rival branch's tip at 101 stays a doubt, four blocks behind.
+assert_eq!(ds.to_string(), "tip=105 splits=[] rivals=[100:101] summary=-");
+assert_eq!(doubts::eff_depth(&headers, &ds, 100)?, 4);
+assert!(doubts::spendable_eff(&params, &headers, &ds, None, &coin)?);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
 ## Events and records
 
 `docs/SPEC.md` records the specification relationship and
