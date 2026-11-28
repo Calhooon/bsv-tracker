@@ -110,9 +110,12 @@ RUSTDOCFLAGS=-Dwarnings cargo doc --locked --no-deps
 cargo build --locked --target wasm32-unknown-unknown --features wasm
 ```
 
-`.github/workflows/ci.yml` runs `test`, `fmt`, `clippy`, `vectors` and
-`wasm32`, the five checks `main` requires, on every PR and main push, with
-`msrv`, `machete` (non-blocking), `secrets` and `actionlint` beside them. The
+`.github/workflows/ci.yml` runs `test`, `fmt`, `clippy`, `vectors`, `wasm32`
+and `locks`, the six checks each line requires, on every PR and push to `main`
+and `beta`, with `msrv`, `machete` (non-blocking), `secrets` and `actionlint`
+beside them; `.github/workflows/lines.yml` runs the direction rule's check of
+each line, `main-in-beta` on `beta` and `beta-born` on `main` (every change is
+born on `beta`, `RELEASING.md`). The
 `vectors` job runs the eight chain-event envelope vectors and the ARC status
 vector by name and fails unless each one executes. Dependabot moves the
 stack's crates daily at 18:00Z under `.github/dependabot.yml`. `RELEASING.md`
