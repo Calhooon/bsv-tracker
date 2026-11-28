@@ -147,8 +147,9 @@ jobs:
       - name: The doubts' rows of record
         run: |
           cargo test --locked --test doubts_rows -- --exact \
-            rows_of_record_states | tee doubts_rows.out
-          grep -q '^test result: ok. 1 passed; 0 failed; 0 ignored' doubts_rows.out
+            rows_of_record_states \
+            rows_of_record_asks | tee doubts_rows.out
+          grep -q '^test result: ok. 2 passed; 0 failed; 0 ignored' doubts_rows.out
 
   # The wallet, the overlay engine and the app layer host this crate in wasm.
   wasm32:

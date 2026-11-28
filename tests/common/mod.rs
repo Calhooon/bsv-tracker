@@ -64,10 +64,7 @@ impl Headers for TestHeaders {
     }
 }
 pub fn params() -> Params {
-    Params {
-        age_threshold: 60,
-        bound: None,
-    }
+    Params::new(60, 1)
 }
 pub fn step(s: &mut State, h: &TestHeaders, i: Input) {
     s.step(&params(), h, i).unwrap();

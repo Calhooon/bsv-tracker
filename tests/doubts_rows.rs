@@ -5,8 +5,8 @@
 //!
 //! Each case names a settled line, a fold (`run`, or `raw` alone for the
 //! Lean's `runUnpruned`), a start, its rows in the Lean's helpers' terms and
-//! the printed line after the last row. Its `asks` are read by the depth
-//! functions, which this file does not test yet.
+//! the printed line after the last row. Its `asks` are read by
+//! `doubts::eff_depth` under headers that carry no header (the Lean's `hdAt`).
 // The lint bar binds the library; a test may unwrap, and its fixtures fail loudly
 // (bsv-stack-lean #134).
 #![allow(
@@ -114,10 +114,7 @@ fn rows_of_record_states() {
                 Some(n) => (Some(height(n)), case["out"].as_bool().unwrap()),
                 None => (None, false),
             };
-            let params = Params {
-                age_threshold: 60,
-                bound,
-            };
+            let params = Params::new(60, 1).with_bound(bound);
             let checked = doubts::run_checked(&bounds, &params, &from, &rows);
             assert_eq!(checked.is_out(), out, "{name}: out under {bound:?}");
             assert_eq!(checked.doubts(), &after, "{name}: the check drops nothing");
@@ -141,8 +138,58 @@ fn rows_of_record_states() {
         }
         ran += 1;
     }
-    assert_eq!(ran, 77, "the rows of record hold 77 cases");
-    assert_eq!(file["counts"]["cases"], 77);
+    assert_eq!(ran, 80, "the rows of record hold 80 cases");
+    assert_eq!(file["counts"]["cases"], 80);
+}
+
+/// The fold a case names, from its start.
+fn fold_of(case: &Value) -> Doubts {
+    let bounds = Bounds::new(height(&case["settled"]));
+    let from = start(&case["start"]);
+    let rows: Vec<ChainEvent> = case["rows"].as_array().unwrap().iter().map(row).collect();
+    match case["fold"].as_str().unwrap() {
+        "run" => doubts::run(&bounds, &from, &rows),
+        "raw" => rows.iter().fold(from, |ds, e| doubts::raw(e, &ds)),
+        other => panic!("a fold this test does not know: {other}"),
+    }
+}
+
+/// Every ask of every case: `[headers_tip, x, eff]` is `eff_depth` at `x`
+/// under headers at `headers_tip` that carry no header, after the case's
+/// rows. The depth reads the headers' tip alone; it asks for no header.
+#[test]
+fn rows_of_record_asks() {
+    let file: Value = serde_json::from_str(ROWS_OF_RECORD).unwrap();
+    let mut asked = 0;
+    for case in file["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let after = fold_of(case);
+        for ask in case["asks"].as_array().unwrap() {
+            let ask = ask.as_array().expect("an ask is [headers_tip, x, eff]");
+            assert_eq!(ask.len(), 3, "{name}: an ask is [headers_tip, x, eff]");
+            let headers = TestHeaders {
+                tip: height(&ask[0]),
+                ..TestHeaders::default()
+            };
+            let x = height(&ask[1]);
+            let eff = ask[2].as_u64().unwrap();
+            assert_eq!(
+                doubts::eff_depth(&headers, &after, x),
+                Ok(eff),
+                "{name}: eff_depth at {x} under headers at {}",
+                headers.tip
+            );
+            // The lead is read under the lesser tip.
+            assert_eq!(
+                doubts::lead_tip(&headers, &after),
+                Ok(after.tip().min(headers.tip)),
+                "{name}: lead_tip"
+            );
+            asked += 1;
+        }
+    }
+    assert_eq!(asked, 184, "the rows of record hold 184 asks");
+    assert_eq!(file["counts"]["asks"], 184);
 }
 
 const SPLIT_CASES: &str = include_str!("vectors/doubts/split_cases.txt");
@@ -289,6 +336,14 @@ fn stored_form_refuses() {
             r#"{"rivals":[],"splits":[["ka",5,6]],"tip":6,"gone":null}"#,
         ),
         (
+            "one key named twice",
+            r#"{"rivals":[],"splits":[["ka",5],["ka",5]],"tip":6,"gone":null}"#,
+        ),
+        (
+            "one key named twice at two heights",
+            r#"{"rivals":[],"splits":[["ka",5],["kb",7],["ka",9]],"tip":6,"gone":null}"#,
+        ),
+        (
             "an open split whose key is not text",
             r#"{"rivals":[],"splits":[[5,5]],"tip":6,"gone":null}"#,
         ),
@@ -305,10 +360,7 @@ fn stored_form_refuses() {
 /// within; the start is not counted; no number is no check.
 #[test]
 fn bound_counts_after_rows() {
-    let with = |bound| Params {
-        age_threshold: 60,
-        bound,
-    };
+    let with = |bound| Params::new(60, 1).with_bound(bound);
     let two = Doubts::new(vec![], vec![("ka".into(), 50), ("kb".into(), 50)], 60, None);
     assert!(!doubts::over(&with(None), &two));
     assert!(!doubts::over(&with(Some(2)), &two));
