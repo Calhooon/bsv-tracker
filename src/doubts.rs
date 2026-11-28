@@ -2,20 +2,33 @@
 //! open splits and the feed's tip, folded one row at a time.
 //!
 //! The module mirrors `lean/Headers/Doubts.lean` of bsv-stack-lean at
-//! `7213ef4a`, under the Lean's names: [`Rival`] (`Rival`, with `covers` and
+//! `656c502a`, under the Lean's names: [`Rival`] (`Rival`, with `covers` and
 //! `merge`), [`Doubts`] (`Doubts`, with `cold` and `held`), [`Bounds`]
 //! (`Bounds`, and `B400`), [`raw`], [`prune`], [`step`] and [`run`]. The
 //! private helpers `add`, `rekey`, `rekey_all`, `absorb`, `top_height`,
-//! `low_tip` and `keep` are the Lean's `add`, `rekey`, `rekeyAll`, `absorb`,
-//! `topHeight`, `lowTip` and `keep`.
+//! `low_tip`, `is_open`, `open_split`, `close_split` and `keep` are the
+//! Lean's `add`, `rekey`, `rekeyAll`, `absorb`, `topHeight`, `lowTip`,
+//! `isOpen`, `openSplit`, `closeSplit` and `keep`.
+//!
+//! # The open splits, keyed (cut 1f)
+//!
+//! An open split is a pair, its key and its fork height, and nothing more
+//! (the Lean's section 7d; the stack's `docs/DECISIONS-2026-10-19.md` 30.7).
+//! The key is the hash of the two branches' common ancestor: the row's
+//! `key` with its `split:` prefix taken off (a key without the prefix, which
+//! the decoder refuses, is read whole). Two keys can be open at one height.
+//! A `split` row for a key not open puts its pair at the front; a `split`
+//! row for a key already open keeps its place, and the stored height
+//! becomes the lower of the stored one and the row's. A `splitResolved` row
+//! removes the pair of its key and reads no height; a key not open changes
+//! nothing.
 //!
 //! The doubts are a pure function of the feed's rows. No function here reads
-//! a header, a clock or the network, and none reads a hash, a root, a time or
-//! a chain work of an event: a `tip` row gives its height, a `fork` row its
-//! height and its competitor's height, a `reorg` row its fork height, the
-//! highest removed height and its new tip's height, a `split` row its fork
-//! height and its lower witness tip's height, a `splitResolved` row its fork
-//! height.
+//! a header, a clock or the network, and none reads a root, a time or a chain
+//! work of an event: a `tip` row gives its height, a `fork` row its height
+//! and its competitor's height, a `reorg` row its fork height, the highest
+//! removed height and its new tip's height, a `split` row its key, its fork
+//! height and its lower witness tip's height, a `splitResolved` row its key.
 //!
 //! The doubts sit beside the tracker's reducer and never inside it: a host
 //! that reads one feed row calls [`step`] and then
@@ -31,7 +44,8 @@
 //! {"rivals":[{"fork":101,"tip":101}],"splits":[],"tip":103,"gone":null}
 //! ```
 //!
-//! All four fields are required. `gone` is `null` or a rival; a text without
+//! An open split is stored as a pair, `["<key>", <fork height>]`:
+//! `"splits":[["k95",95]]`, in list order. All four fields are required. `gone` is `null` or a rival; a text without
 //! it is refused and never read as "nothing dropped", since forgetting the
 //! summary is the permissive direction. A field's name never changes, a later
 //! minor only adds a field, and this reader refuses a text holding a field it
@@ -42,7 +56,8 @@
 //! # The printed line
 //!
 //! `Display` prints `tip=103 splits=[] rivals=[101:101] summary=-`: the
-//! feed's tip, the open splits' fork heights in list order, each kept rival
+//! feed's tip, each open split as `key:height` in list order (the newest key
+//! at the front, the key in full), each kept rival
 //! as `fork:tip` in list order, and the summary as `fork:tip` or `-`. The
 //! stored field `gone` is printed as `summary=`.
 
@@ -50,7 +65,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{ChainEvent, EventHeader, Height, SplitTip};
+use crate::{ChainEvent, EventHeader, Hash, Height, SplitTip};
 
 /// A rival branch the host has been shown: the height at which it forked
 /// from the host's chain (one above the last common block, the feed's
@@ -91,8 +106,8 @@ impl Rival {
     }
 }
 
-/// A host's doubts: the rivals it has been shown, the fork heights of the
-/// open splits, the feed's tip at the host's cursor, and the summary of what
+/// A host's doubts: the rivals it has been shown, the open splits (each its
+/// key and its fork height), the feed's tip at the host's cursor, and the summary of what
 /// the prune has dropped. The Lean's `Doubts`.
 ///
 /// The fields are private and read through [`Doubts::rivals`],
@@ -103,7 +118,7 @@ impl Rival {
 #[serde(deny_unknown_fields)]
 pub struct Doubts {
     rivals: Vec<Rival>,
-    splits: Vec<Height>,
+    splits: Vec<(Hash, Height)>,
     tip: Height,
     // Required on read: with no `default`, a text that leaves the field out
     // is refused where serde's derive would read an absent option as `None`.
@@ -117,13 +132,13 @@ fn required_gone<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Ri
 
 impl Doubts {
     /// The doubts holding exactly these parts: the kept rivals and the open
-    /// splits' fork heights in list order, the feed's tip, and the summary of
+    /// splits (each its key and its fork height) in list order, the feed's tip, and the summary of
     /// what was dropped. No invariant is asked of them: any value is a legal
     /// start for [`run`].
     #[must_use]
     pub const fn new(
         rivals: Vec<Rival>,
-        splits: Vec<Height>,
+        splits: Vec<(Hash, Height)>,
         tip: Height,
         gone: Option<Rival>,
     ) -> Self {
@@ -148,10 +163,10 @@ impl Doubts {
         &self.rivals
     }
 
-    /// The fork heights of the open splits, in list order: the newest is at
-    /// the front.
+    /// The open splits, each its key and its fork height, in list order: the
+    /// newest key is at the front. A key is in the list at most once.
     #[must_use]
-    pub fn splits(&self) -> &[Height] {
+    pub fn splits(&self) -> &[(Hash, Height)] {
         &self.splits
     }
 
@@ -181,11 +196,11 @@ impl Doubts {
 impl fmt::Display for Doubts {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "tip={} splits=[", self.tip)?;
-        for (i, fork) in self.splits.iter().enumerate() {
+        for (i, (key, fork)) in self.splits.iter().enumerate() {
             if i > 0 {
                 f.write_str(" ")?;
             }
-            write!(f, "{fork}")?;
+            write!(f, "{key}:{fork}")?;
         }
         f.write_str("] rivals=[")?;
         for (i, rival) in self.rivals.iter().enumerate() {
@@ -277,6 +292,48 @@ fn low_tip(tips: &[SplitTip]) -> Option<Height> {
     tips.iter().map(|tip| tip.height).min()
 }
 
+/// The key of a split row: its `key` with the `split:` prefix taken off, the
+/// common ancestor's hash. A key without the prefix is read whole.
+fn split_key(key: &str) -> &str {
+    key.strip_prefix("split:").unwrap_or(key)
+}
+
+/// The Lean's `isOpen`: an entry of the open splits carries the key.
+fn is_open(key: &str, list: &[(Hash, Height)]) -> bool {
+    list.iter().any(|(held, _)| held == key)
+}
+
+/// The Lean's `openSplit`: a key not open goes to the front with the row's
+/// fork height; a key open keeps its place and its stored height becomes the
+/// lower of the stored height and the row's.
+fn open_split(key: &str, fork_height: Height, list: &[(Hash, Height)]) -> Vec<(Hash, Height)> {
+    if is_open(key, list) {
+        list.iter()
+            .map(|(held, fork)| {
+                if held == key {
+                    (held.clone(), (*fork).min(fork_height))
+                } else {
+                    (held.clone(), *fork)
+                }
+            })
+            .collect()
+    } else {
+        let mut out = Vec::with_capacity(list.len() + 1);
+        out.push((key.to_owned(), fork_height));
+        out.extend_from_slice(list);
+        out
+    }
+}
+
+/// The Lean's `closeSplit`: the entry with the key is removed; no height is
+/// read.
+fn close_split(key: &str, list: &[(Hash, Height)]) -> Vec<(Hash, Height)> {
+    list.iter()
+        .filter(|(held, _)| held != key)
+        .cloned()
+        .collect()
+}
+
 /// The Lean's `keep`: an entry is kept while its fork height is not past the
 /// settled line under the tip `tip`.
 fn keep(bounds: &Bounds, tip: Height, rival: &Rival) -> bool {
@@ -292,10 +349,12 @@ fn keep(bounds: &Bounds, tip: Height, rival: &Rival) -> bool {
 ///   rival forking above the row's fork height are re-keyed at it; and, when
 ///   the row removes a header, the removed branch is added as a rival at the
 ///   fork height with the highest removed height as its tip.
-/// - `split`: the row's fork height is put at the front of the open splits,
-///   and the lower of the two witness tips is added as a rival at it.
-/// - `splitResolved`: every open split at the row's fork height closes. The
-///   row's key is not read.
+/// - `split`: a key not open is put at the front of the open splits with the
+///   row's fork height; a key open keeps its place and takes the lower of its
+///   stored height and the row's. Either way the lower of the two witness
+///   tips is added as a rival at the row's fork height.
+/// - `splitResolved`: the open split of the row's key closes, and no other.
+///   The row's fork height is not read; a key not open changes nothing.
 /// - `invalidated`, `frozen`, `tipAge`: nothing.
 ///
 /// Adding a rival keeps only entries no other entry covers: nothing is added
@@ -334,11 +393,11 @@ pub fn raw(event: &ChainEvent, ds: &Doubts) -> Doubts {
             }
         }
         ChainEvent::Split {
-            fork_height, tips, ..
+            key,
+            fork_height,
+            tips,
         } => {
-            let mut splits = Vec::with_capacity(ds.splits.len() + 1);
-            splits.push(*fork_height);
-            splits.extend_from_slice(&ds.splits);
+            let splits = open_split(split_key(key), *fork_height, &ds.splits);
             Doubts {
                 rivals: match low_tip(tips) {
                     Some(low) => add(Rival::new(*fork_height, low), ds.rivals.clone()),
@@ -349,13 +408,8 @@ pub fn raw(event: &ChainEvent, ds: &Doubts) -> Doubts {
                 gone: ds.gone.clone(),
             }
         }
-        ChainEvent::SplitResolved { fork_height, .. } => Doubts {
-            splits: ds
-                .splits
-                .iter()
-                .copied()
-                .filter(|fork| fork != fork_height)
-                .collect(),
+        ChainEvent::SplitResolved { key, .. } => Doubts {
+            splits: close_split(split_key(key), &ds.splits),
             ..ds.clone()
         },
         ChainEvent::Invalidated { .. } | ChainEvent::Frozen { .. } | ChainEvent::TipAge { .. } => {
