@@ -37,4 +37,4 @@
 
 [SRC] The earlier stack pin retained a successful recheck's trigger. At the final pin, `lean/Tracker.lean:340` clears `reask` along with `suspect`, matching the charter and scenario table. [X] The crate follows this rule; `successful_recheck_clears_completed_spend_and_fork_triggers` failed on the old Rust transition, then passed after the correction. Unavailable headers continue to keep the mined word and schedule `Recheck`.
 
-[D] The new #31 spendability predicate and host confirmation-depth policy remain host adapter work under this lane's integration exclusion. The scheduling projection `Params` holds the age threshold; a host supplies its spend depth separately, as the wallet sketch states.
+[D] The new #31 spendability predicate and host confirmation-depth policy remain host adapter work under this lane's integration exclusion. `Params` holds the age threshold and, as the Lean's `Params.spendDepth`, the host's spend depth, which `doubts::spendable_eff` reads (for #51).

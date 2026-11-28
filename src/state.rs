@@ -224,8 +224,24 @@ impl Reask {
         }
     }
 }
-/// Host selected scheduling parameters.
+/// The host's parameters: one host, one set for an act.
+///
+/// `#[non_exhaustive]`: build them with [`Params::new`], which takes what a
+/// host must say (the age threshold and the spend depth) and defaults the
+/// rest; set a later field by assignment or by its `with_` method. A later
+/// minor adds a field with a default here and breaks no host.
+///
+/// ```compile_fail,E0639
+/// let _ = bsv_tracker::Params { age_threshold: 60, spend_depth: 1, bound: None, versions: vec![1, 2] };
+/// ```
+///
+/// ```
+/// let params = bsv_tracker::Params::new(60, 1).with_bound(Some(4));
+/// assert_eq!((params.spend_depth, params.bound), (1, Some(4)));
+/// assert_eq!(params.versions, [1, 2]);
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Params {
     /// Seconds after the last hint before an announced or seen word is re-asked.
     pub age_threshold: Timestamp,
@@ -246,6 +262,65 @@ pub struct Params {
     /// [`doubts::run_checked`]: crate::doubts::run_checked
     /// [`doubts::Checked::Out`]: crate::doubts::Checked::Out
     pub bound: Option<u32>,
+    /// The depth a `mined` word must have before a coin of the transaction is
+    /// spendable with no application rule: the block at its height counts
+    /// one, each height above it to the tip one more. The host sets it once,
+    /// when it builds its parameters, and [`doubts::spendable_eff`] reads it:
+    /// it is never a number a caller passes per call. No floor is applied
+    /// here: a depth of 0 passes a `mined` word whose root the headers carry
+    /// even under an open split, as the Lean's guard does; a host's floor of
+    /// 1 is the host's. The tracker's reducer does not read it. The stack's
+    /// `Params.spendDepth` (`lean/Tracker.lean`).
+    ///
+    /// [`doubts::spendable_eff`]: crate::doubts::spendable_eff
+    pub spend_depth: u64,
+    /// The row versions the host's decoder reads, against which a served
+    /// snapshot's folding decoder is checked ([`doubts::accepts`]). Defaults
+    /// to [`Params::VERSIONS`], the versions [`decode_envelope`] reads. The
+    /// stack's `StartParams.versions` (`lean/Headers/Host.lean` section 12).
+    ///
+    /// [`doubts::accepts`]: crate::doubts::accepts
+    /// [`decode_envelope`]: crate::decode_envelope
+    pub versions: Vec<u64>,
+}
+impl Params {
+    /// The row versions [`decode_envelope`](crate::decode_envelope) reads: 1,
+    /// and 2 for the split kinds.
+    pub const VERSIONS: [u64; 2] = [1, 2];
+
+    /// The parameters a host must say: the age threshold, in the clock's
+    /// seconds, and the spend depth. The feed's named number is absent (no
+    /// check, today's host) and the row versions are [`Params::VERSIONS`].
+    #[must_use]
+    pub fn new(age_threshold: Timestamp, spend_depth: u64) -> Self {
+        Self {
+            age_threshold,
+            bound: None,
+            spend_depth,
+            versions: Self::VERSIONS.to_vec(),
+        }
+    }
+
+    /// The same parameters with the feed's named number `bound`.
+    #[must_use]
+    pub fn with_bound(mut self, bound: Option<u32>) -> Self {
+        self.bound = bound;
+        self
+    }
+
+    /// The same parameters with the spend depth `spend_depth`.
+    #[must_use]
+    pub fn with_spend_depth(mut self, spend_depth: u64) -> Self {
+        self.spend_depth = spend_depth;
+        self
+    }
+
+    /// The same parameters with the row versions `versions`.
+    #[must_use]
+    pub fn with_versions(mut self, versions: Vec<u64>) -> Self {
+        self.versions = versions;
+        self
+    }
 }
 /// The complete private state of one transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
