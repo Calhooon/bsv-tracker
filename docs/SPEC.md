@@ -38,3 +38,7 @@
 [SRC] The earlier stack pin retained a successful recheck's trigger. At the final pin, `lean/Tracker.lean:340` clears `reask` along with `suspect`, matching the charter and scenario table. [X] The crate follows this rule; `successful_recheck_clears_completed_spend_and_fork_triggers` failed on the old Rust transition, then passed after the correction. Unavailable headers continue to keep the mined word and schedule `Recheck`.
 
 [D] The new #31 spendability predicate and host confirmation-depth policy remain host adapter work under this lane's integration exclusion. `Params` holds the age threshold and, as the Lean's `Params.spendDepth`, the host's spend depth, which `doubts::spendable_eff` reads (for #51).
+
+## The doubts
+
+[SRC] `bsv_tracker::doubts` mirrors `lean/Headers/Doubts.lean` and `lean/Headers/Host.lean` of the stack, not `lean/Tracker.lean`, and sits beside the reducer above, never inside it. Its page is [DOUBTS.md](DOUBTS.md): every public item beside the Lean name it mirrors at the stack's commit, the stored form, the printed line, the feed's named number and the snapshot, what is not mirrored, and the test of record.

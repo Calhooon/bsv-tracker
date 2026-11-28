@@ -1004,7 +1004,8 @@ impl Served {
 }
 
 /// Why a host refuses a served snapshot: one value for each condition of
-/// [`accepts`], and the headers' fault.
+/// [`accepts`] (two for the tip: no header there, or another hash), and the
+/// headers' fault.
 ///
 /// A refused snapshot is never built into doubts. What a host does then is
 /// the host's: an out host holds every act ([`spendable_c`] passes no `Mined`

@@ -265,7 +265,8 @@ pub struct Params {
     /// The depth a `mined` word must have before a coin of the transaction is
     /// spendable with no application rule: the block at its height counts
     /// one, each height above it to the tip one more. The host sets it once,
-    /// when it builds its parameters, and [`doubts::spendable_eff`] reads it:
+    /// when it builds its parameters, and [`doubts::spendable_eff`] and
+    /// [`doubts::spendable_c`] read it:
     /// it is never a number a caller passes per call. No floor is applied
     /// here: a depth of 0 passes a `mined` word whose root the headers carry
     /// even under an open split, as the Lean's guard does; a host's floor of
@@ -273,6 +274,7 @@ pub struct Params {
     /// `Params.spendDepth` (`lean/Tracker.lean`).
     ///
     /// [`doubts::spendable_eff`]: crate::doubts::spendable_eff
+    /// [`doubts::spendable_c`]: crate::doubts::spendable_c
     pub spend_depth: u64,
     /// The row versions the host's decoder reads, against which a served
     /// snapshot's folding decoder is checked ([`doubts::accepts`]). Defaults
