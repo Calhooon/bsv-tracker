@@ -98,7 +98,9 @@
 //! minor only adds a field, and this reader refuses a text holding a field it
 //! does not know. A host that cannot read its stored doubts reports a fault;
 //! it does not start cold in silence. The reader checks shape and no
-//! invariant: any value the type holds is a legal start for [`run`].
+//! invariant: any value the type holds is a legal start for [`run`]. It
+//! reads each split's key in lower case, as [`raw`] and [`Doubts::new`] do,
+//! and refuses two spellings of one key as one key named twice.
 //!
 //! # The printed line
 //!
@@ -179,10 +181,20 @@ pub struct Doubts {
     gone: Option<Rival>,
 }
 
+/// Each split's key in lower case, as [`split_key`] reads a row's key.
+fn lower_keys(splits: Vec<(Hash, Height)>) -> Vec<(Hash, Height)> {
+    splits
+        .into_iter()
+        .map(|(key, fork)| (key.to_ascii_lowercase(), fork))
+        .collect()
+}
+
+// The keys are lower-cased before they are compared, so two spellings of one
+// key are one key named twice.
 fn distinct_keys<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<(Hash, Height)>, D::Error> {
-    let splits = Vec::<(Hash, Height)>::deserialize(deserializer)?;
+    let splits = lower_keys(Vec::<(Hash, Height)>::deserialize(deserializer)?);
     for (i, (key, _)) in splits.iter().enumerate() {
         if splits[..i].iter().any(|(held, _)| held == key) {
             return Err(serde::de::Error::custom(format!(
@@ -201,9 +213,11 @@ impl Doubts {
     /// The doubts holding exactly these parts: the kept rivals and the open
     /// splits (each its key and its fork height) in list order, the feed's tip, and the summary of
     /// what was dropped. No invariant is asked of them: any value is a legal
-    /// start for [`run`].
+    /// start for [`run`]. Each split's key is lower-cased, as [`raw`] reads a
+    /// row's key, so a `splitResolved` row names it in whatever case it is
+    /// sent.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         rivals: Vec<Rival>,
         splits: Vec<(Hash, Height)>,
         tip: Height,
@@ -211,7 +225,7 @@ impl Doubts {
     ) -> Self {
         Self {
             rivals,
-            splits,
+            splits: lower_keys(splits),
             tip,
             gone,
         }
@@ -221,7 +235,12 @@ impl Doubts {
     /// it starts from. The Lean's `Doubts.cold`.
     #[must_use]
     pub const fn cold(tip: Height) -> Self {
-        Self::new(Vec::new(), Vec::new(), tip, None)
+        Self {
+            rivals: Vec::new(),
+            splits: Vec::new(),
+            tip,
+            gone: None,
+        }
     }
 
     /// The kept rivals, in list order: the newest entry is at the front.
@@ -888,10 +907,7 @@ impl Snapshot {
     pub fn new(rival: Option<Rival>, splits: Vec<(Hash, Height)>, tip: Height) -> Self {
         Self {
             rival,
-            splits: splits
-                .into_iter()
-                .map(|(key, fork)| (key.to_ascii_lowercase(), fork))
-                .collect(),
+            splits: lower_keys(splits),
             tip,
         }
     }

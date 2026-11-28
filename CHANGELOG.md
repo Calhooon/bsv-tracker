@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed: a split's key in mixed case through `Doubts::new` and the stored form (for #51, #57)
+
+- `raw` and `Snapshot::new` lower-cased a split's key, and `Doubts::new` and the stored form's reader did not: a key that came in through either of those two in upper case stayed so, and a `splitResolved` row for it, read in lower case, never closed it. Both now lower-case each key, so a key is held in lower case whichever way it comes in, and the stored form refuses two spellings of one key as one key named twice. `Doubts::new` is no longer a `const fn` (no release carries the module). Test: `a_mixed_case_key_is_held_in_lower_case` in `tests/doubts_rows.rs`, which fails before the change.
+
 ### Added: the direction rule and its two checks
 
 - The owner's ruling of 2026-11-18, as bsv-wallet-cli holds it: every change is born on `beta`, and `main` takes a `git cherry-pick -x` of a `beta` commit in six classes alone (`RELEASING.md`, "The direction rule"). `.github/workflows/lines.yml` runs `main-in-beta` on every pull request into `beta` and every push to `beta` (each commit of `main` after the merge base `86f193b8` is on `beta` by sha, patch or cherry-pick line, or is a hop commit, as the dependency bot's `Cargo.lock` moves are), `beta-born` on every pull request into `main`, and `lines-selftest`, the 26 planted cases of `.github/ci/test_lines.py`, on every event. No source line, test or public item of the crate changes.
