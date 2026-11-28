@@ -552,3 +552,215 @@ fn a_couriers_mempool_presence_announces_a_built_word_and_writes_no_chain_word()
         .into_hint("arc", 0);
     assert_eq!(seen.status, HintStatus::Seen);
 }
+
+// The word `handed` (for #56): one example per arm of the proof page's
+// section 3 (bsv-stack-lean `docs/p0/tracker-handed-proof-2026-11-27.md`),
+// over `lean/Tracker.lean`'s `onHandOver`, `onDischarge`, `onEndHold`,
+// `onTick`, `onHint`, `onProof` and `onVerdict`.
+
+fn host(action: HostAction) -> Input {
+    Input::Host(action)
+}
+fn hand(instance: &str, at: u64) -> Input {
+    host(HostAction::HandOver {
+        instance: instance.into(),
+        at,
+    })
+}
+fn discharge(instance: &str) -> Input {
+    host(HostAction::Discharge {
+        instance: instance.into(),
+    })
+}
+
+#[test]
+fn handed_arm_hand_over_writes_handed_from_unknown_and_built() {
+    let h = TestHeaders::default();
+    let mut s = State::new(hash(1));
+    step(&mut s, &h, hand("a", 5));
+    assert_eq!(s.word(), &Word::Handed);
+    assert_eq!(s.handed_to(), &[HandedTo::new("a", 5)]);
+    let mut b = State::new(hash(1));
+    step(&mut b, &h, host(HostAction::Build));
+    step(&mut b, &h, hand("a", 5));
+    assert_eq!(b.word(), &Word::Handed);
+    assert_eq!(b.handed_to(), &[HandedTo::new("a", 5)]);
+    assert_eq!(Word::Handed.chain(), None);
+}
+
+#[test]
+fn handed_arm_hand_over_renews_in_place() {
+    let h = TestHeaders::default();
+    let mut s = State::new(hash(1));
+    step(&mut s, &h, hand("a", 5));
+    step(&mut s, &h, hand("b", 6));
+    step(&mut s, &h, hand("a", 9));
+    assert_eq!(
+        s.handed_to(),
+        &[HandedTo::new("a", 9), HandedTo::new("b", 6)]
+    );
+}
+
+#[test]
+fn handed_arm_hand_over_leaves_abandoned_whole_and_writes_no_other_word() {
+    let h = TestHeaders::default();
+    let mut s = State::new(hash(1));
+    step(&mut s, &h, host(HostAction::Abandon));
+    let before = s.clone();
+    step(&mut s, &h, hand("a", 5));
+    assert_eq!(s, before);
+    let mut a = State::new(hash(1));
+    step(&mut a, &h, hand("a", 5));
+    step(&mut a, &h, host(HostAction::Tick(65)));
+    assert_eq!(a.reask(), Some(&Reask::Reannounce));
+    step(&mut a, &h, hint(HintStatus::Accepted, 70));
+    assert_eq!(a.word(), &Word::Announced);
+    assert!(a.handed_to().is_empty());
+    assert_eq!(a.reask(), Some(&Reask::Reannounce));
+    step(&mut a, &h, hand("b", 71));
+    assert_eq!(a.word(), &Word::Announced);
+    assert!(a.handed_to().is_empty());
+    assert_eq!(a.reask(), None);
+}
+
+#[test]
+fn handed_arm_hints_raise_and_never_lower() {
+    let h = TestHeaders::default();
+    for (status, word) in [
+        (HintStatus::Accepted, Word::Announced),
+        (
+            HintStatus::MempoolPresent {
+                source: "courier".into(),
+            },
+            Word::Announced,
+        ),
+        (HintStatus::Seen, Word::Seen),
+        (HintStatus::Rejected { reason: "r".into() }, Word::Handed),
+        (HintStatus::StaleBlock, Word::Handed),
+        (HintStatus::Unknown, Word::Handed),
+    ] {
+        let mut s = State::new(hash(1));
+        step(&mut s, &h, hand("a", 5));
+        step(&mut s, &h, hint(status.clone(), 6));
+        assert_eq!(s.word(), &word, "{status:?}");
+        assert_eq!(s.handed_to().is_empty(), word != Word::Handed, "{status:?}");
+    }
+}
+
+#[test]
+fn handed_arm_discharge_keeps_while_held_then_returns_built() {
+    let h = TestHeaders::default();
+    let mut s = State::new(hash(1));
+    step(&mut s, &h, hand("a", 5));
+    step(&mut s, &h, hand("b", 6));
+    step(&mut s, &h, discharge("a"));
+    assert_eq!(s.word(), &Word::Handed);
+    assert_eq!(s.handed_to(), &[HandedTo::new("b", 6)]);
+    step(&mut s, &h, discharge("b"));
+    assert_eq!(s.word(), &Word::Built);
+    assert!(s.handed_to().is_empty());
+    let mut other = State::new(hash(1));
+    step(&mut other, &h, host(HostAction::Build));
+    let before = other.clone();
+    step(&mut other, &h, discharge("a"));
+    assert_eq!(other, before);
+}
+
+#[test]
+fn handed_arm_abandon_refused_end_hold_ends() {
+    let h = TestHeaders::default();
+    let mut s = State::new(hash(1));
+    step(&mut s, &h, hand("a", 5));
+    step(&mut s, &h, host(HostAction::Abandon));
+    assert_eq!(s.word(), &Word::Handed);
+    step(&mut s, &h, host(HostAction::Tick(65)));
+    step(&mut s, &h, host(HostAction::EndHold));
+    assert_eq!(s.word(), &Word::Abandoned);
+    assert!(s.handed_to().is_empty());
+    assert_eq!(s.reask(), None);
+    let mut taken = State::new(hash(1));
+    step(&mut taken, &h, hand("a", 5));
+    step(&mut taken, &h, hint(HintStatus::Accepted, 6));
+    let before = taken.clone();
+    step(&mut taken, &h, host(HostAction::EndHold));
+    assert_eq!(taken, before);
+}
+
+#[test]
+fn handed_arm_tick_reannounces_on_the_oldest_and_never_on_built() {
+    let h = TestHeaders::default();
+    let mut s = State::new(hash(1));
+    step(&mut s, &h, hand("a", 10));
+    step(&mut s, &h, hand("b", 30));
+    step(&mut s, &h, host(HostAction::Tick(69)));
+    assert_eq!(s.reask(), None);
+    step(&mut s, &h, host(HostAction::Tick(70)));
+    assert_eq!(s.reask(), Some(&Reask::Reannounce));
+    assert_eq!(Reask::Reannounce.label(), "reannounce");
+    let mut built = State::new(hash(1));
+    step(&mut built, &h, host(HostAction::Build));
+    step(&mut built, &h, host(HostAction::Tick(u64::MAX)));
+    assert_eq!(built.reask(), None);
+    let mut late = State::new(hash(1));
+    step(&mut late, &h, hand("a", u64::MAX - 1));
+    step(&mut late, &h, host(HostAction::Tick(u64::MAX)));
+    assert_eq!(late.reask(), None);
+}
+
+#[test]
+fn handed_arm_evidence_leaves_and_the_list_follows() {
+    let txid = hash(1);
+    let mut h = TestHeaders::default();
+    let p = proof(&txid, 10, 2);
+    h.insert(&p, 10);
+    let mut s = State::new(&txid);
+    step(&mut s, &h, hand("a", 5));
+    step(&mut s, &h, Input::Evidence(Evidence::Proof(p)));
+    assert!(matches!(s.word(), Word::Mined(_)));
+    assert!(s.handed_to().is_empty());
+
+    let mut r = State::new(&txid);
+    step(&mut r, &h, hand("a", 5));
+    step(
+        &mut r,
+        &h,
+        Input::Evidence(Evidence::Verdict(NodeVerdict::Rejected {
+            reason: "no".into(),
+        })),
+    );
+    assert_eq!(
+        r.word(),
+        &Word::Rejected {
+            reason: "no".into()
+        }
+    );
+    assert!(r.handed_to().is_empty());
+
+    let mut c = State::new(&txid);
+    step(&mut c, &h, hand("a", 5));
+    step(
+        &mut c,
+        &h,
+        Input::Evidence(Evidence::Verdict(NodeVerdict::Conflicted {
+            competitors: vec![hash(9)],
+        })),
+    );
+    assert!(matches!(c.word(), Word::Conflicted { .. }));
+    assert_eq!(c.handed_to(), &[HandedTo::new("a", 5)]);
+
+    let rival = proof(&hash(8), 11, 3);
+    h.insert(&rival, 11);
+    let mut k = State::new(&txid);
+    step(&mut k, &h, hand("a", 5));
+    step(&mut k, &h, Input::Evidence(Evidence::Competitor(rival)));
+    assert!(matches!(k.word(), Word::Conflicted { .. }));
+    assert_eq!(k.handed_to(), &[HandedTo::new("a", 5)]);
+}
+
+#[test]
+fn handed_to_is_stored_by_its_serde_form() {
+    let held = HandedTo::new("arcade", 1_700_000_000);
+    let text = serde_json::to_string(&held).unwrap();
+    assert_eq!(text, r#"{"instance":"arcade","at":1700000000}"#);
+    assert_eq!(serde_json::from_str::<HandedTo>(&text).unwrap(), held);
+}

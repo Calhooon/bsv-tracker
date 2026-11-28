@@ -263,9 +263,12 @@ fn spendable_today(
         Word::Mined(m) => {
             still_confirmed(headers, s) && params.spend_depth <= depth(headers.tip, m.height())
         }
-        w @ (Word::Unknown | Word::Built | Word::Announced | Word::Seen | Word::Abandoned) => {
-            rule.is_some_and(|r| (r.allows)(w))
-        }
+        w @ (Word::Unknown
+        | Word::Built
+        | Word::Handed
+        | Word::Announced
+        | Word::Seen
+        | Word::Abandoned) => rule.is_some_and(|r| (r.allows)(w)),
         Word::Stale | Word::Rejected { .. } | Word::Conflicted { .. } => false,
     }
 }

@@ -84,6 +84,7 @@ fn reasks() -> Vec<(Reask, &'static str)> {
         (Reask::Recheck, "recheck"),
         (Reask::Age, "age"),
         (Reask::Spend, "spend"),
+        (Reask::Reannounce, "reannounce"),
     ]
 }
 
@@ -122,7 +123,8 @@ fn the_lists_are_the_words_in_declaration_order() {
             "proof_failed",
             "recheck",
             "age",
-            "spend"
+            "spend",
+            "reannounce"
         ]
     );
     let mut words: Vec<&str> = statuses().iter().map(|(_, w, _)| *w).collect();
