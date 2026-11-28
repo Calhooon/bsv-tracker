@@ -384,3 +384,42 @@ fn bound_counts_after_rows() {
     assert!(!checked.is_out());
     assert_eq!(checked.doubts().splits(), [("ka".to_owned(), 50)]);
 }
+
+/// A key in mixed case is held in lower case through every way in: a row
+/// (`raw` lower-cases it), `Doubts::new` and the stored form's reader. A key
+/// that came in through either of the last two in upper case once stayed so,
+/// and a `splitResolved` row for it, read in lower case, never closed it: the
+/// split held for ever (the repository's issue #57). Two spellings of one key
+/// in a stored text are one key named twice, and refused.
+#[test]
+fn a_mixed_case_key_is_held_in_lower_case() {
+    let upper = "AB".repeat(32);
+    let lower = "ab".repeat(32);
+    let built = Doubts::new(vec![], vec![(upper.clone(), 50)], 60, None);
+    assert_eq!(built.splits(), [(lower.clone(), 50)]);
+    let text = format!(r#"{{"rivals":[],"splits":[["{upper}",50]],"tip":60,"gone":null}}"#);
+    let read: Doubts = serde_json::from_str(&text).unwrap();
+    assert_eq!(read, built);
+    assert_eq!(
+        serde_json::to_string(&read).unwrap(),
+        serde_json::to_string(&built).unwrap()
+    );
+    for ds in [&built, &read] {
+        let closed = doubts::step(&Bounds::B400, &keyed_resolved_row(&upper, 50), ds);
+        assert!(
+            closed.splits().is_empty(),
+            "the upper-case resolve: {closed}"
+        );
+        let closed = doubts::step(&Bounds::B400, &keyed_resolved_row(&lower, 50), ds);
+        assert!(
+            closed.splits().is_empty(),
+            "the lower-case resolve: {closed}"
+        );
+    }
+    let twice =
+        format!(r#"{{"rivals":[],"splits":[["{upper}",50],["{lower}",52]],"tip":60,"gone":null}}"#);
+    assert!(
+        serde_json::from_str::<Doubts>(&twice).is_err(),
+        "two spellings of one key must be refused: {twice}"
+    );
+}
