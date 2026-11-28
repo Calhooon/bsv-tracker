@@ -117,8 +117,43 @@ fn rows_of_record_states() {
         }
         ran += 1;
     }
-    assert_eq!(ran, 53, "the rows of record hold 53 cases");
-    assert_eq!(file["counts"]["cases"], 53);
+    assert_eq!(ran, 71, "the rows of record hold 71 cases");
+    assert_eq!(file["counts"]["cases"], 71);
+}
+
+const SPLIT_CASES: &str = include_str!("vectors/doubts/split_cases.txt");
+
+/// A row of the stack's oracle: `T <height>`, `S <key> <fork> <tip> <tip>`
+/// or `E <key> <fork>`, the key without its `split:` prefix.
+fn oracle_row(fields: &[&str]) -> ChainEvent {
+    let n = |text: &str| text.parse::<u32>().expect("a height");
+    match fields {
+        ["T", h] => tip_row(n(h)),
+        ["S", key, fh, a, b] => keyed_split_row(key, n(fh), n(a), n(b)),
+        ["E", key, fh] => keyed_resolved_row(key, n(fh)),
+        _ => panic!("an oracle row of a shape this test does not know: {fields:?}"),
+    }
+}
+
+/// The stack's reducer's own run over twelve rows
+/// (`tests/vectors/doubts/split_cases.txt`): replayed through `step` from a
+/// cold start, every state line byte for byte.
+#[test]
+fn split_cases_oracle() {
+    let mut lines = SPLIT_CASES.lines().filter(|line| !line.starts_with('#'));
+    let mut ds = Doubts::cold(0);
+    let mut cursor = 0;
+    while let Some(row) = lines.next() {
+        cursor += 1;
+        let state = lines.next().expect("every row has its state line");
+        let row = row
+            .strip_prefix(&format!("row {cursor} "))
+            .expect("the rows are numbered from 1");
+        let fields: Vec<&str> = row.split(' ').collect();
+        ds = doubts::step(&Bounds::B400, &oracle_row(&fields), &ds);
+        assert_eq!(format!("state {cursor} {ds}"), state, "row {cursor}: {row}");
+    }
+    assert_eq!(cursor, 12, "the oracle holds twelve rows");
 }
 
 /// Three golden texts, each read and written back identical.
