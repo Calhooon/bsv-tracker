@@ -6,16 +6,46 @@ use std::collections::BTreeMap;
 pub fn hash(n: u64) -> String {
     format!("{n:064x}")
 }
-pub fn proof(txid: &str, height: u32, sibling: u64) -> Proof {
-    let path = MerklePath::new(
+/// A length that is not 64, for a transaction the tests track by a made-up
+/// txid: the length the helper `proof` states.
+pub const STATED_LEN: u64 = 191;
+/// The path of one level: the txid at 0, `hash(sibling)` at 1.
+pub fn path_of(txid: &str, height: u32, sibling: u64) -> MerklePath {
+    MerklePath::new(
         height,
         vec![vec![
             MerklePathLeaf::new_txid(0, txid.into()),
             MerklePathLeaf::new(1, hash(sibling)),
         ]],
     )
-    .unwrap();
-    Proof::new(txid, path).unwrap()
+    .unwrap()
+}
+/// A proof for a txid nobody has bytes for, so the stated road, at
+/// `STATED_LEN`.
+pub fn proof(txid: &str, height: u32, sibling: u64) -> Proof {
+    Proof::with_stated_len(txid, STATED_LEN, path_of(txid, height, sibling)).unwrap()
+}
+/// `len` bytes that differ for every `n`: `n` big-endian in the leading
+/// eight, then 0x5a.
+pub fn tx_bytes(n: u64, len: usize) -> Vec<u8> {
+    let mut bytes = vec![0x5a; len];
+    let lead = n.to_be_bytes();
+    let k = len.min(8);
+    bytes[..k].copy_from_slice(&lead[..k]);
+    bytes
+}
+/// The txid of transaction bytes, as the crate computes it.
+pub fn txid_of(tx_bytes: &[u8]) -> String {
+    State::measured(tx_bytes).txid().to_owned()
+}
+/// A proof built from transaction bytes: the measured road.
+pub fn proof_of(tx_bytes: &[u8], height: u32, sibling: u64) -> Proof {
+    Proof::new(tx_bytes, path_of(&txid_of(tx_bytes), height, sibling)).unwrap()
+}
+/// A competitor's proof, built from the competitor's own bytes
+/// (`tx_bytes(n, 191)`), as the competitor door asks.
+pub fn competitor(n: u64, height: u32, sibling: u64) -> Proof {
+    proof_of(&tx_bytes(n, 191), height, sibling)
 }
 #[derive(Clone, Debug, Default)]
 pub struct TestHeaders {

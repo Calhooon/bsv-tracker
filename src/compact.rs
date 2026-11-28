@@ -179,7 +179,7 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Parts, CompactError> {
         };
         let root = r.id()?;
         let depth = r.varint()?;
-        let proof = Proof::new(proof_txid, path).map_err(CompactError::Evidence)?;
+        let proof = Proof::record(&proof_txid, path).map_err(CompactError::Evidence)?;
         if proof.txid() != txid {
             return Err(CompactError::Evidence(CheckError::TxidMismatch));
         }

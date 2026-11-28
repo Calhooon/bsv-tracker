@@ -829,8 +829,16 @@ pub fn spendable_eff<H: Headers + ?Sized>(
 /// The depth is read before the header, so no header is asked for at a
 /// height the answer does not need; the answer is the Lean's.
 ///
+/// A transaction of exactly 64 bytes is never taken as proven by a merkle
+/// path. This door holds no state, so it reads the proof's own length: a
+/// host that builds a BEEF holds the bytes it puts in it and builds the
+/// proof with [`Proof::new`] (or states the length with
+/// [`Proof::with_stated_len`]); a proof taken out of a record, which carries
+/// none, is refused before anything is read.
+///
 /// # Errors
 ///
+/// [`CheckError::Unmeasured`] for a proof with no length,
 /// [`CheckError::Headers`] when a header the answer needs cannot be read,
 /// and [`CheckError::InvalidProof`] when the path does not reduce; never a
 /// pass.
@@ -839,6 +847,9 @@ pub fn may_enter<H: Headers + ?Sized>(
     ds: &Doubts,
     proof: &Proof,
 ) -> Result<bool, CheckError> {
+    if proof.length().is_none() {
+        return Err(CheckError::Unmeasured);
+    }
     if eff_depth(headers, ds, proof.height())? < 2 {
         return Ok(false);
     }

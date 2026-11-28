@@ -1,3 +1,4 @@
+use crate::evidence::Len;
 use crate::{
     ChainEvent, CheckError, CheckedProof, CompactError, Headers, Height, Hint, HintStatus, Proof,
     Timestamp, TxId, AMBIGUOUS_TX_LEN,
@@ -130,9 +131,27 @@ pub enum NodeVerdict {
 /// The inputs that may write a chain word.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Evidence {
-    /// A proof of this transaction's inclusion.
+    /// A proof of this transaction's inclusion. A transaction of exactly 64
+    /// bytes is never taken as proven by a merkle path, so the door reads a
+    /// length beside the txid: the state's own measure
+    /// ([`State::tx_len`]) when it holds one, against which a proof of
+    /// another length is refused ([`CheckError::LengthMismatch`]); else the
+    /// proof's, where a proof built from bytes ([`Proof::new`]) measures the
+    /// state and a stated one ([`Proof::with_stated_len`]) is taken on the
+    /// host's word. A state measured at 64 bytes takes no proof
+    /// ([`CheckError::AmbiguousLength`]), and an unmeasured state refuses a
+    /// proof taken out of a record, which carries no length
+    /// ([`CheckError::Unmeasured`]).
     Proof(Proof),
-    /// A proof of a competing transaction's inclusion.
+    /// A proof of a competing transaction's inclusion. What the host must
+    /// have shown: that the competitor spends an input of the tracked
+    /// transaction, which the crate cannot see. The proof is built from the
+    /// competitor's own bytes ([`Proof::new`]), so its txid is their hash
+    /// and its length is theirs; any other proof is refused
+    /// ([`CheckError::Unmeasured`]). The competitor is judged by its own
+    /// length, never by the tracked transaction's measure. A competitor
+    /// known only by someone's word is a hint or a node's verdict, never
+    /// this.
     Competitor(Proof),
     /// A chain event from the host's header feed.
     Chain(ChainEvent),
@@ -595,6 +614,13 @@ impl State {
         if txid != self.txid {
             return Err(CheckError::TxidMismatch);
         }
+        self.take_len(len)
+    }
+
+    /// The arms of [`State::measure`] after the txid: a length measured from
+    /// bytes of this transaction, or held for it by a
+    /// [`Tracker`](crate::Tracker) across a restore.
+    pub(crate) fn take_len(&mut self, len: u64) -> Result<(), CheckError> {
         match self.tx_len {
             Some(held) if held == len => return Ok(()),
             Some(held) => {
@@ -613,7 +639,10 @@ impl State {
     }
 
     /// Whether a proof was taken for this transaction and still shows: a
-    /// stored record, or a word only a proof writes.
+    /// stored record, or a word only a proof writes. The record is the
+    /// tracked transaction's own wherever it sits; a competitor's proof is
+    /// never kept on it, so a `conflicted` word written by a competitor's
+    /// proof holds none of ours.
     fn holds_a_proof(&self) -> bool {
         self.evidence.is_some() || matches!(self.word, Word::Mined(_) | Word::Stale)
     }
@@ -724,7 +753,12 @@ impl State {
     /// path: a state measured at [`AMBIGUOUS_TX_LEN`] ([`State::tx_len`])
     /// answers every [`Evidence::Proof`] for its txid with
     /// [`CheckError::AmbiguousLength`] and is left whole, with no re-ask
-    /// written (a re-ask is an order to fetch, and no fetch helps).
+    /// written (a re-ask is an order to fetch, and no fetch helps). Any other
+    /// measured state takes a proof of its own length alone; an unmeasured
+    /// state is measured by a proof built from bytes, takes a stated one on
+    /// the host's word, and refuses a record's proof, which carries no
+    /// length. A competitor's proof is judged by the competitor's own
+    /// length, read from its bytes.
     ///
     /// # Errors
     ///
@@ -732,6 +766,10 @@ impl State {
     /// check fails; the word is kept and the re-ask recorded.
     /// [`CheckError::AmbiguousLength`] for a proof offered to a state
     /// measured at 64 bytes; nothing is recorded.
+    /// [`CheckError::LengthMismatch`] for a proof of another length than the
+    /// state's measure, and [`CheckError::Unmeasured`] for a proof with no
+    /// length an unmeasured state can read or a competitor's proof not built
+    /// from its bytes: the word and the record kept, the re-ask recorded.
     pub fn step<H: Headers + ?Sized>(
         &mut self,
         params: &Params,
@@ -874,6 +912,22 @@ impl State {
         if self.tx_len == Some(AMBIGUOUS_TX_LEN) {
             return Err(CheckError::AmbiguousLength);
         }
+        // The length: the state's measure when it holds one, else the
+        // proof's. No proof carries 64, by its constructors.
+        match (self.tx_len, proof.length()) {
+            (Some(measured), Some(Len::Measured(offered) | Len::Stated(offered)))
+                if offered != measured =>
+            {
+                self.reask = Some(Reask::ProofFailed { height });
+                return Err(CheckError::LengthMismatch { measured, offered });
+            }
+            (None, None) => {
+                self.reask = Some(Reask::ProofFailed { height });
+                return Err(CheckError::Unmeasured);
+            }
+            (None, Some(Len::Measured(len))) => self.tx_len = Some(len),
+            (Some(_), _) | (None, Some(Len::Stated(_))) => {}
+        }
         match crate::evidence::check_snapshot(headers, proof) {
             Ok(checked) => {
                 let checked = Arc::new(checked);
@@ -900,6 +954,12 @@ impl State {
     ) -> Result<(), CheckError> {
         let height = proof.height();
         let competitor = proof.txid().to_owned();
+        // The competitor's own length, read from its bytes; never the tracked
+        // transaction's measure.
+        if !matches!(proof.length(), Some(Len::Measured(_))) {
+            self.reask = Some(Reask::ProofFailed { height });
+            return Err(CheckError::Unmeasured);
+        }
         match crate::evidence::check_snapshot(headers, proof) {
             Ok(_) => {
                 match &mut self.word {
@@ -1071,8 +1131,67 @@ fn agrees(word: &Word, status: &HintStatus) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::State;
-    use crate::CheckError;
+    use super::{Evidence, Input, Params, Reask, State, Word};
+    use crate::evidence::Len;
+    use crate::{CheckError, Header, HeaderError, Headers, Height, Proof};
+    use bsv_rs::transaction::{MerklePath, MerklePathLeaf};
+
+    /// Headers that carry every root asked of them at their one height.
+    struct Carry(Height, String);
+    impl Headers for Carry {
+        fn header_at(&self, height: Height) -> Result<Option<Header>, HeaderError> {
+            Ok((height == self.0).then(|| Header {
+                hash: "cc".repeat(32),
+                merkle_root: self.1.clone(),
+            }))
+        }
+        fn tip_height(&self) -> Result<Height, HeaderError> {
+            Ok(self.0)
+        }
+    }
+
+    /// The row of the proof door no public road reaches without two byte
+    /// strings of one hash: a state measured at one length offered a proof
+    /// built from bytes of its txid at another. Refused, the word and the
+    /// record kept, the re-ask written; the same proof at the state's own
+    /// length is taken.
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn a_proof_from_bytes_of_another_length_is_refused_and_the_word_kept() {
+        let tx_bytes = [0x5a_u8; 191];
+        let state = State::measured(&tx_bytes);
+        let txid = state.txid().to_owned();
+        let path = MerklePath::new(
+            10,
+            vec![vec![
+                MerklePathLeaf::new_txid(0, txid.clone()),
+                MerklePathLeaf::new(1, "bb".repeat(32)),
+            ]],
+        )
+        .unwrap();
+        let proof = Proof::new(&tx_bytes, path).unwrap();
+        let headers = Carry(10, proof.root().unwrap());
+        let params = Params::new(60, 1);
+        let mut s = state.clone();
+        let other = proof.clone().on_length(Some(Len::Measured(190)));
+        assert_eq!(
+            s.step(&params, &headers, Input::Evidence(Evidence::Proof(other))),
+            Err(CheckError::LengthMismatch {
+                measured: 191,
+                offered: 190,
+            })
+        );
+        assert_eq!(s.word(), &Word::Unknown);
+        assert_eq!(s.evidence(), None);
+        assert_eq!(s.reask(), Some(&Reask::ProofFailed { height: 10 }));
+        assert_eq!(s.tx_len(), Some(191));
+        assert_eq!(
+            s.step(&params, &headers, Input::Evidence(Evidence::Proof(proof))),
+            Ok(())
+        );
+        assert!(matches!(s.word(), Word::Mined(_)));
+        assert_eq!(s.tx_len(), Some(191));
+    }
 
     /// The arm no public road reaches without two byte strings of one hash:
     /// a state measured at one length handed bytes of its txid at another.

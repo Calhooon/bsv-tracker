@@ -6,6 +6,10 @@ pub trait ProofFetcher {
     type Error;
     /// Execute a scheduled re-ask, with no proof represented explicitly.
     /// Competitor hints name the txids the host must also reconcile.
+    /// The proof it returns is built from the transaction's bytes
+    /// ([`Proof::new`]) or on a length the host states
+    /// ([`Proof::with_stated_len`]): a transaction of exactly 64 bytes is
+    /// never taken as proven by a merkle path.
     ///
     /// # Errors
     ///

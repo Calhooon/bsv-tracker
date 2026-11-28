@@ -69,7 +69,7 @@ fn host(code: u8, observed: u64) -> Input {
 fn input(h: &mut TestHeaders, code: u8, height: u32, sibling: u64) -> Input {
     h.fault = false;
     let own = proof(&hash(1), height, sibling);
-    let other = proof(&hash(2), height, sibling);
+    let other = competitor(2, height, sibling);
     Input::Evidence(match code {
         0 => {
             h.insert(&own, u64::from(height));

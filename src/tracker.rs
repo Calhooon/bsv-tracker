@@ -111,16 +111,50 @@ impl Tracker {
     /// Hold a state restored by [`State::from_compact`] and index it as a
     /// transition would; a restored `mined` word joins the suspect set, so the
     /// next tip rechecks it. The state it replaces, if the txid was tracked.
-    pub fn restore(&mut self, state: State) -> Option<State> {
+    ///
+    /// A measure the tracker holds is never lost to the swap. When the state
+    /// it replaces holds [`State::tx_len`] and the restored row carries no
+    /// length, the measure is carried across, with [`State::measure`]'s
+    /// rules: off 64 bytes nothing else moves.
+    ///
+    /// # The fault road
+    ///
+    /// A transaction of exactly 64 bytes is never taken as proven by a merkle
+    /// path. When the held measure is
+    /// [`AMBIGUOUS_TX_LEN`](crate::AMBIGUOUS_TX_LEN) and the restored row
+    /// holds a proof, the proof is unsaid AND the fault is returned: the row
+    /// is held measured, with its record dropped and a `Mined` or `Stale`
+    /// word read as `Unknown` ([`State::measure`]'s fault road), and the call
+    /// answers `Err(`[`CheckError::AmbiguousLength`]`)`; the replaced state,
+    /// which held no proof, is not returned. It is reached only when the row
+    /// took its proof on a length its host stated, or before the crate
+    /// measured a transaction. The Lean's machine has no such step.
+    ///
+    /// # Errors
+    ///
+    /// [`CheckError::AmbiguousLength`] on the fault road above, the restored
+    /// row held; [`CheckError::LengthMismatch`] when the restored row carries
+    /// another measure than the one the tracker holds, nothing moved.
+    pub fn restore(&mut self, mut state: State) -> Result<Option<State>, CheckError> {
         let txid = state.txid().to_owned();
-        let tracked = self.states.contains_key(&txid);
+        let held = self.states.get(&txid).map(State::tx_len);
+        let mut fault = Ok(());
+        if let Some(Some(measured)) = held {
+            match state.tx_len() {
+                Some(offered) if offered != measured => {
+                    return Err(CheckError::LengthMismatch { measured, offered });
+                }
+                Some(_) => {}
+                None => fault = state.take_len(measured),
+            }
+        }
         let mut previous = None;
         // The transition only swaps the state; it cannot fail.
         let _ = self.apply_transition(&txid, |_, slot| {
             previous = Some(std::mem::replace(slot, state));
             Ok(())
         });
-        previous.filter(|_| tracked)
+        fault.map(|()| previous.filter(|_| held.is_some()))
     }
     /// An immutable state, or none when the host does not track this txid.
     #[must_use]
