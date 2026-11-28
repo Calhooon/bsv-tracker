@@ -5,8 +5,8 @@
 release 0.8.0 is on bsv-rs 0.8.0. crates.io carries both versions; the
 repository's Releases page has a Release for each tag.
 
-The tracker owns re-asking: per transaction it keeps a word, the evidence
-behind it, the hints received and the next re-ask. Checked headers and proofs
+The tracker owns re-asking: per transaction it keeps one of ten words, the
+evidence behind it, the hints received and the next re-ask. Checked headers and proofs
 establish mining and conflicts; broadcaster words only supply hints. A reorg
 re-asks only the transactions whose proof's root left the active headers. Hosts provide headers, proofs, hints and time,
 so wallet, overlay and application hosts can use the same transition logic
@@ -66,8 +66,11 @@ not this host did. It writes no chain word.
 
 ## Kinds a later release adds
 
-`HostAction`, `Reask`, `HintStatus`, `VerdictError` and `Verdict` are
-`#[non_exhaustive]`: a later minor may add a kind, an error or a field, so a
+`Word` is not `#[non_exhaustive]`: a new word is a decision for every host, so
+it breaks each exhaustive match until the host names it. The tenth,
+`Word::Handed`, is written only by the host's `HostAction::HandOver`, so a host
+that feeds no hand-over never sees it. `HostAction`, `Reask`, `HintStatus`,
+`VerdictError` and `Verdict` are `#[non_exhaustive]`: a later minor may add a kind, an error or a field, so a
 host's match on one of the four enums carries a wildcard arm, and a host
 builds a `Verdict` with `Verdict::new` and assigns its fields after it. That
 arm keeps and surfaces what the host does not name. A re-ask of a kind the
