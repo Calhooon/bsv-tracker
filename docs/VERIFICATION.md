@@ -1411,3 +1411,104 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 [X] Every row of both journals but the eleven unreadable ones passes the crate's decoder, and every folded row's state equals its states line both ways: the reducer reproduces the state after every row of the header service's two journals from a cold start.
 
 [D] The journals exercise `tip`, `fork`, `reorg` and `tipAge` rows alone, and no `reorg` among them removes more than one header; the `split` and `splitResolved` arms, a reorg of several headers or of none, and a start that is not cold are pinned by `tests/doubts_rows.rs`, not here.
+
+## The doubts' theorems as properties (#51, 2026-11-28)
+
+[X] Worktree `bsv-tracker-trk-51-4`, branch `lane/trk-51-4`, from beta with the doubts' reducer, the keyed splits, the bound, the depth, the guard and the snapshot of #51 landed. The test is `tests/doubts_properties.rs`: 31 tests, each named for the Lean theorem it mirrors, 256 cases each from the explicit ChaCha seed with no failure persistence, as `tests/properties.rs`. No case is a journal row.
+
+[SRC] The stack: bsv-stack-lean at `08ce467d` (`08ce467d2251c14f8a32719deb5f6e904d869bc4`), `lean/Headers/Doubts.lean` and `lean/Headers/Host.lean` (sections 6 and 12), read as they stand there, and `docs/p0/reorg-proof-cut2-2026-11-18.md`, its parts "Cut 1f" and "Cut 1g".
+
+The draw: rows over heights 0 to 600 (half the cases anywhere in that range, half within 40 of a drawn base, where rivals, splits and tips meet), under a settled line of 2, 5 or 400; a `tip` row half the time, a `fork`, a well-formed `reorg` of up to 24 removed headers, now and then the hand-built `reorg` that removes none, a `split` and a `splitResolved`, each split row naming one of four keys, two of which are one key in two cases. A start is any value `Doubts::new` holds: no invariant is asked of it. The headers are `TestHeaders` with a drawn tip, above or below the feed's; the guard's cases add mined words whose root the headers carry, mined words whose root has since moved, paths at heights the headers do not carry, and each word that claims nothing of the chain, under no rule or one of two rules. Every height from 0 to 645 is asked. The Lean's `runUnpruned`, `dropped`, `effDepthFeedTip`, `Tracker.spendable`, `Tracker.stillConfirmed` and `Tracker.rootChecks`, which are not items of the crate, are mirrored in the test under their names, as is the host's page loop (`readC`), which is the host's.
+
+| test | the Lean's theorem (`Doubts.lean` unless said) | what is checked |
+|---|---|---|
+| `safe_either_lag` | `effDepth_le_depth`, `safe_either_lag`, `effDepth_le_lead_headers` | on a start, its run and its unpruned run: `eff <= depth(headers' tip, x)`; for every held entry forking at or below `x`, `eff` at most the feed's tip, and at most the headers' tip, less its tip (stopped at zero) |
+| `no_feed_is_today` | `no_feed_is_today`, `live_no_feed` | cold doubts at any tip, 0 included, and any doubts with no rival, split or summary: `eff == depth`; `spendable_eff` equals today's guard (`Tracker.spendable`); `may_enter` is "the root checks and two deep" |
+| `run_safe` | `run_safe` | from cold, any rows, any headers, every `x`: `eff(run) <= eff(unpruned)` |
+| `run_safe_from` | `run_safe_from` | the same from any start |
+| `run_exact` | `run_exact` | from cold, `N` from 1 to 8: when every dropped entry's tip plus `N` is at most the lesser of the run's tip and the headers' tip, `N <= eff(run)` exactly when `N <= eff(unpruned)`; the hypothesis is met with something dropped in some case (checked) |
+| `state_bound` | `state_bound` | from cold, after every prefix: the held entries forking at or below the tip number at most the settled line plus two |
+| `reorg_holds_until_headers` | `reorg_holds_until_headers` | from any start, a `reorg` row at `fh` whose removed branch tops at `m`, then any rows, the headers' tip at most `m`: `eff == 0` at every height from `fh` up |
+| `stale_feed_only_unseen` | `stale_feed_only_unseen` | two hosts, the stale one's tip not above the fresh one's: where the stale passes `N` and the fresh refuses, the fresh holds an open split (an entry, key and height) at or below `x` the stale lacks, or an entry forking at or below `x`, fewer than `N` below the lesser of its tip and the headers', that no entry of the stale covers; asked at the least such `N`, since the conclusion only weakens as `N` rises |
+| `lesser_cost_bound` | `lesser_cost_bound`, `effDepth_le_feedTip`, `effDepth_eq_feedTip` | `eff <= effFeedTip <= eff + (feed tip - headers' tip)`, equal when the feed is not ahead |
+| `safety` | `safety`, `spendableEff_imp_spendable` | under any doubts: `spendable_eff` true implies today's guard true; `may_enter` true implies the root checks and the path is two deep under the headers |
+| `coldFrom_safe` | `Host.lean` `coldFrom_safe`, `least_covers` | `U` the unpruned run from any start: `Snapshot::least(U)` covers `U` (its tip, every open split, every held entry covered), and the run from its doubts over later rows passes nothing `unpruned(U, later)` refuses |
+| `least_enough` | `Host.lean` `least_enough` | the same from cold: against the unpruned run of all the rows |
+| `least_fold_coversK` | `Host.lean` `least_fold_tip_splits`, `least_fold_coversK` | the service's fold (`Snapshot::fold`) of the least snapshot has the tip and the open splits of the least snapshot of the run, exactly, and covers that run by key |
+| `split_row_holds` | `split_row_holds` | after any `split` row, from any doubts: `eff == 0` from its fork height up, under headers that fault too (`Ok(0)`, no header read) |
+| `split_new_key` | `split_new_key` | a key not open goes to the front at the row's height |
+| `split_open_key` | `split_open_key` | a key open keeps its place and takes the lower of its height and the row's |
+| `split_adds_rival` | `split_adds_rival` | a `split` row's rivals are a `fork` row's at its fork height with its lower witness tip as the competitor; tip and summary stay |
+| `splitResolved_mem` | `splitResolved_mem`, `splitResolved_ends_key` | after a `splitResolved` the open entries are the old ones of other keys, in order, and the key is not open |
+| `splitResolved_unknown` | `splitResolved_unknown` | for a key not open, `raw` changes nothing |
+| `splitResolved_reads_no_height` | `splitResolved_reads_no_height` | two fork heights, one answer |
+| `splitResolved_keeps_other` | `splitResolved_keeps_other` | every open entry of another key still holds from its height up |
+| `split_holds_until_resolved` | `split_holds_until_resolved`, `run_keeps_hold` | with no `splitResolved` for its key, an open split stays open at its height or lower and holds from its height up, through any rows |
+| `splits_never_shrink` | `splits_never_shrink` | no row but a `splitResolved` lowers the count of open splits |
+| `run_perm` | `run_perm` | two starts alike but for the order of their rivals and their splits: after any rows the same rivals and splits as sets, one tip, one summary, one depth at every height |
+| `trips_iff` | `Host.lean` `trips_iff`, `within_never_trips`, `run_splits` | under a named number `n` (0 to 3): `run_checked` is out exactly when some row leaves more than `n` keys open in the unpruned run; its doubts are `run`'s either way; out in some case (checked) |
+| `trips_none` | `Host.lean` `trips_none`, `absent_is_today` | with the number absent: `Checked::Within(run)` |
+| `out_passes_nothing` | `Host.lean` `out_passes_nothing` | out: `eff_c == 0` at every height; no `mined` word passes `spendable_c` under a spend depth of 1 or more; a word with no height is today's guard |
+| `effC_le` | `Host.lean` `effC_le` | within, `eff_c` is `eff_depth`; out, never above it |
+| `accepts_iff` | `Host.lean` `accepts_iff`, `refuse_version`, `refuse_unreadable`, `overfull_refused`, `refuse_tip` | `accepts` takes a served snapshot exactly on its five conditions (at the host's cursor or past it; a version `Params::versions` names; readable through its own cursor; within `Params::bound`; its tip the host's header by height and hash); `start_from` gives its doubts and cursor or builds none; a refusal names the earliest failing condition in the Lean's order (the crate's own promise) |
+| `starts_le_reads` | `Host.lean` `starts_le_reads`, `readC_counts`, `in_never_starts`, `leaves_out`, `refused_stays` | over the page loop, mirrored on the crate's `run_checked` and `start_from`: each read counts one read and at most one start; a host in its contract makes no start; an out host that takes a snapshot is in at its doubts and cursor, one refused or unanswered stays as it was; starts at most reads (both a taken and a refused start occur, checked) |
+| `registerAncestor_is_onProof` | `registerAncestor_is_onProof` | see below |
+
+[X] The run (the SDK of rule 10 named for the link; the lines in name order):
+
+```text
+$ cargo test --locked --test doubts_properties
+running 31 tests
+test accepts_iff ... ok
+test coldFrom_safe ... ok
+test effC_le ... ok
+test least_enough ... ok
+test least_fold_coversK ... ok
+test lesser_cost_bound ... ok
+test no_feed_is_today ... ok
+test out_passes_nothing ... ok
+test registerAncestor_is_onProof ... ok
+test reorg_holds_until_headers ... ok
+test run_exact ... ok
+test run_perm ... ok
+test run_safe ... ok
+test run_safe_from ... ok
+test safe_either_lag ... ok
+test safety ... ok
+test splitResolved_keeps_other ... ok
+test splitResolved_mem ... ok
+test splitResolved_reads_no_height ... ok
+test splitResolved_unknown ... ok
+test split_adds_rival ... ok
+test split_holds_until_resolved ... ok
+test split_new_key ... ok
+test split_open_key ... ok
+test split_row_holds ... ok
+test splits_never_shrink ... ok
+test stale_feed_only_unseen ... ok
+test starts_le_reads ... ok
+test state_bound ... ok
+test trips_iff ... ok
+test trips_none ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+```
+
+In the full suite (`cargo test --locked`) the total is 161 passed, 0 failed, against 129 at the base: these 31 and the key-case test of the source change (`a_mixed_case_key_is_held_in_lower_case`).
+
+[X] Five faults planted in `src/doubts.rs`, one at a time and reverted after, each fail some of these tests: the summary not re-keyed by a `reorg` row (`run_safe`, `run_safe_from`, `coldFrom_safe`, `least_enough`, `least_fold_coversK` fail); a key already open keeping its stored height (`split_row_holds`, `split_open_key`); the lead read under the feed's tip alone (`safe_either_lag`, `reorg_holds_until_headers`); the readable cursor unchecked (`accepts_iff`); the summary not read by the depth (six fail).
+
+The theorems issue #51 names, each by its test: `safe_either_lag`, `reorg_holds_until_headers`, `run_safe`, `run_exact`, `state_bound` and `lesser_cost_bound` are each a test of the same name. None is left without one.
+
+`registerAncestor` (section 6) is no new item of the crate: it is the tracker's own proof step on a new state, `State::new(txid)` stepped with `Evidence::Proof(path)`. `registerAncestor_is_onProof` pins that: the word is `mined` at the path's height with the path and the header it was checked against as its evidence, not suspect and with no re-ask, exactly when the path's leaf is the txid and the headers carry its root at its height; otherwise the step is an error and the word stays `unknown` with no evidence. The crate's check also asks the headers' tip at or above the height, which the Lean's `onProof` does not; every header the test draws is at or below the tip, where the two agree.
+
+What changed since the plan wrote appendix C, mirrored as the Lean states it now:
+
+- The open splits are entries, a key and a fork height (cut 1f). `stale_feed_only_unseen` reads "an open split the stale host lacks" as an entry `p ∉ ds.splits`; the snapshot's `Covers` reads entries; cut 1g's `CoversK` reads each key at its height or lower (`SplitCov`).
+- The lead is read under the lesser of the feed's and the headers' tip (cut 1e): `run_exact`'s hypothesis, `stale_feed_only_unseen`'s bound and `safe_either_lag`'s headers' side read it so.
+- `reorg_holds_until_headers` holds from any start, not only from cold; the test draws any start.
+- The plan's test names were descriptions; each test here carries its theorem's name (`eff_depth_never_above_the_depth_or_a_lead` is `safe_either_lag`, `spendable_eff_never_passes_what_today_refuses` is `safety`, `cold_from_the_least_snapshot_is_safe` is `coldFrom_safe` and `least_enough`).
+- Cut 1f's laws of the keyed split and cut 1g's bound, out host, snapshot conditions and page loop are new rows of the table: the properties a host's safety rests on.
+- The Lean's guards name a word `handed` that the crate has no word for; the mirrors read the crate's words. The Lean compares a snapshot's tip hash with `==`; the crate compares it in either case; the draw's hashes are in lower case, where the two agree.
+
+Not mirrored here: `Host.lean`'s hosts over a journal (`host_is_run`, `two_hosts`, `reachC_holds`, `no_silent_drop`, `reachC_safe` and the rest of its `Reach` and `ReachC` statements), the recheck after a gap, the impossibility of section 8 and the load of a page read: they quantify over the host's journals and page reads, which are the host's, and the crate holds no journal. `fold_coversK` from a snapshot other than the least is not drawn. The pair of `Snapshot.least` over a run, which the Lean leaves owed, is not a theorem and has no test.

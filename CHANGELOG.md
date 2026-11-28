@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added: the doubts' theorems as properties (for #51)
+
+- `tests/doubts_properties.rs`, 31 randomized statements over `bsv_tracker::doubts`, each named for the theorem of bsv-stack-lean at `08ce467d` it mirrors (`lean/Headers/Doubts.lean`; `lean/Headers/Host.lean` sections 6 and 12), 256 cases each from the explicit ChaCha seed with no failure persistence, as `tests/properties.rs`: the six issue #51 names (`safe_either_lag`, `reorg_holds_until_headers`, `run_safe`, `run_exact`, `state_bound`, `lesser_cost_bound`), with `run_safe_from`, `no_feed_is_today`, `stale_feed_only_unseen`, `safety`, `coldFrom_safe`, `least_enough` and `least_fold_coversK`; the keyed split's laws of cut 1f (`split_row_holds`, `split_new_key`, `split_open_key`, `split_adds_rival`, `splitResolved_mem`, `splitResolved_unknown`, `splitResolved_reads_no_height`, `splitResolved_keeps_other`, `split_holds_until_resolved`, `splits_never_shrink`, `run_perm`); and cut 1g's bound, out host, snapshot and page loop (`trips_iff`, `trips_none`, `out_passes_nothing`, `effC_le`, `accepts_iff`, `starts_le_reads`). `registerAncestor_is_onProof` pins that the Lean's `registerAncestor` is the tracker's own proof step on a new state, no new item. `docs/VERIFICATION.md` lists each test beside its theorem. No source line changes.
+
 ### Fixed: a split's key in mixed case through `Doubts::new` and the stored form (for #51, #57)
 
 - `raw` and `Snapshot::new` lower-cased a split's key, and `Doubts::new` and the stored form's reader did not: a key that came in through either of those two in upper case stayed so, and a `splitResolved` row for it, read in lower case, never closed it. Both now lower-case each key, so a key is held in lower case whichever way it comes in, and the stored form refuses two spellings of one key as one key named twice. `Doubts::new` is no longer a `const fn` (no release carries the module). Test: `a_mixed_case_key_is_held_in_lower_case` in `tests/doubts_rows.rs`, which fails before the change.
