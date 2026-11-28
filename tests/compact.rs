@@ -68,7 +68,7 @@ fn status(code: u8, height: u32, n: u64) -> Hint {
 fn input(h: &mut TestHeaders, code: u8, height: u32, n: u64) -> Input {
     h.fault = false;
     let own = proof(&hash(1), height, n);
-    let other = proof(&hash(2), height, n);
+    let other = competitor(2, height, n);
     match code % 14 {
         0 | 1 => {
             h.insert(&own, u64::from(height));
@@ -262,10 +262,10 @@ fn a_restored_mined_word_is_rechecked_before_it_counts() {
     mined(&restored, 10);
     assert!(restored.suspect());
     assert_eq!(restored.reask(), Some(&Reask::Recheck));
-    assert_eq!(host.restore(restored.clone()), None);
+    assert_eq!(host.restore(restored.clone()), Ok(None));
     assert_eq!(
         host.restore(restored),
-        Some(State::from_compact(&bytes).unwrap())
+        Ok(Some(State::from_compact(&bytes).unwrap()))
     );
 
     // The next tip reaches it through the suspect set; the headers agree.

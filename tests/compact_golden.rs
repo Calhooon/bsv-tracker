@@ -231,7 +231,7 @@ fn seen_with_every_hint_and_a_hint_reask() {
 fn mined_with_recheck_state() -> State {
     let mut h = TestHeaders::default();
     let mut s = mined_state(&mut h);
-    let other = proof(&hash(2), 11, 3);
+    let other = competitor(2, 11, 3);
     h.insert(&other, 11);
     step(&mut s, &h, Input::Evidence(Evidence::Competitor(other)));
     assert!(matches!(s.word(), Word::Mined(_)));

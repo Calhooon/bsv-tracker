@@ -71,12 +71,22 @@ fn malformed_sdk_paths_are_rejected_before_root_reduction() {
         },
     ] {
         assert!(matches!(
-            Proof::new(&txid, path),
+            Proof::with_stated_len(&txid, STATED_LEN, path),
             Err(CheckError::InvalidProof(_))
         ));
     }
-    assert!(Proof::new("not a txid", MerklePath::from_coinbase_txid(&txid, 1)).is_err());
-    assert!(Proof::new(hash(2), MerklePath::from_coinbase_txid(&txid, 1)).is_err());
+    assert!(Proof::with_stated_len(
+        "not a txid",
+        STATED_LEN,
+        MerklePath::from_coinbase_txid(&txid, 1)
+    )
+    .is_err());
+    assert!(Proof::with_stated_len(
+        hash(2),
+        STATED_LEN,
+        MerklePath::from_coinbase_txid(&txid, 1)
+    )
+    .is_err());
     // bsv-rs 0.9.0-beta.8 (#817): a walk that pairs a hash holding a character
     // that is not hex is refused, where 0.9.0-beta.7 dropped that side of the
     // pair. The path is an invalid proof at the constructor and reaches no
@@ -89,19 +99,19 @@ fn malformed_sdk_paths_are_rejected_before_root_reduction() {
         ]],
     };
     assert!(matches!(
-        Proof::new(&txid, with_sibling("zz".repeat(32))),
+        Proof::with_stated_len(&txid, STATED_LEN, with_sibling("zz".repeat(32))),
         Err(CheckError::InvalidProof(_))
     ));
     // A sibling that is hex of another length is paired as bsv-rs pairs it
     // (the reference's concatenation): the path reduces, to a root the
     // well-formed proof of the txid does not have, so a true header answers
     // RootMismatch for it and no word moves.
-    let good = Proof::new(&txid, with_sibling(hash(2)))
+    let good = Proof::with_stated_len(&txid, STATED_LEN, with_sibling(hash(2)))
         .unwrap()
         .root()
         .unwrap();
     for sibling in [hash(2)[..63].to_string(), "ab".repeat(31)] {
-        let root = Proof::new(&txid, with_sibling(sibling))
+        let root = Proof::with_stated_len(&txid, STATED_LEN, with_sibling(sibling))
             .unwrap()
             .root()
             .unwrap();
@@ -239,13 +249,13 @@ fn node_and_competitor_evidence_outrank_hints_but_reask_a_mined_word() {
             competitors: vec![hash(4)],
         })),
     );
-    let c = proof(&hash(2), 10, 3);
+    let c = competitor(2, 10, 3);
     h.insert(&c, 10);
     step(&mut s, &h, Input::Evidence(Evidence::Competitor(c.clone())));
     assert_eq!(
         s.word(),
         &Word::Conflicted {
-            competitors: vec![hash(2), hash(4)]
+            competitors: vec![c.txid().into(), hash(4)]
         }
     );
     step(
@@ -258,7 +268,7 @@ fn node_and_competitor_evidence_outrank_hints_but_reask_a_mined_word() {
     assert_eq!(
         s.word(),
         &Word::Conflicted {
-            competitors: vec![hash(5), hash(2), hash(4)]
+            competitors: vec![hash(5), c.txid().into(), hash(4)]
         }
     );
     let own = proof(&hash(1), 11, 3);
@@ -278,22 +288,23 @@ fn node_and_competitor_evidence_outrank_hints_but_reask_a_mined_word() {
     );
     mined(&s, 11);
     assert_eq!(s.evidence(), saved.as_ref());
-    let failed = proof(&hash(3), 99, 4);
+    let failed = competitor(3, 99, 4);
     assert!(s
         .step(&params(), &h, Input::Evidence(Evidence::Competitor(failed)))
         .is_err());
     mined(&s, 11);
     let mut unmined = State::new(hash(1));
-    let competitor = proof(&hash(2), 10, 3);
+    let rival = competitor(2, 10, 3);
+    let rival_txid = rival.txid().to_owned();
     step(
         &mut unmined,
         &h,
-        Input::Evidence(Evidence::Competitor(competitor)),
+        Input::Evidence(Evidence::Competitor(rival)),
     );
     assert_eq!(
         unmined.word(),
         &Word::Conflicted {
-            competitors: vec![hash(2)]
+            competitors: vec![rival_txid]
         }
     );
     assert_eq!(unmined.evidence(), None);
@@ -339,7 +350,7 @@ fn cached_host_check_cannot_bypass_fail_closed_snapshot_lookup() {
     let result = competitor.step(
         &params(),
         &headers,
-        Input::Evidence(Evidence::Competitor(proof(&txid, 10, 2))),
+        Input::Evidence(Evidence::Competitor(common::competitor(1, 10, 2))),
     );
     assert!(matches!(result, Err(CheckError::Headers(_))), "{result:?}");
     assert_eq!(competitor.word(), &Word::Unknown);
@@ -748,7 +759,7 @@ fn handed_arm_evidence_leaves_and_the_list_follows() {
     assert!(matches!(c.word(), Word::Conflicted { .. }));
     assert_eq!(c.handed_to(), &[HandedTo::new("a", 5)]);
 
-    let rival = proof(&hash(8), 11, 3);
+    let rival = competitor(8, 11, 3);
     h.insert(&rival, 11);
     let mut k = State::new(&txid);
     step(&mut k, &h, hand("a", 5));

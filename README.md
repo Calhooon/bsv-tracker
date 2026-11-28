@@ -113,12 +113,14 @@ impl Headers for Verified {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // A coin of a transaction mined at 100, its proof checked against them.
-    let txid = "aa".repeat(32);
+    // The host holds the transaction's bytes: the crate hashes and measures them.
+    let raw_tx = [0x5a_u8; 191];
+    let mut coin = State::measured(&raw_tx);
+    let txid = coin.txid().to_owned();
     let leaves = vec![MerklePathLeaf::new_txid(0, txid.clone()), MerklePathLeaf::new(1, "bb".repeat(32))];
-    let proof = Proof::new(&txid, MerklePath::new(100, vec![leaves])?)?;
+    let proof = Proof::new(&raw_tx, MerklePath::new(100, vec![leaves])?)?;
     let headers = Verified(Header { hash: "cc".repeat(32), merkle_root: proof.root()? });
     let params = Params::new(3600, 3); // the age threshold in seconds, the spend depth
-    let mut coin = State::new(&txid);
     coin.step(&params, &headers, Input::Evidence(Evidence::Proof(proof)))?;
 
     // The feed splits at 100: two branches past it, each with its witness tip at 101.
