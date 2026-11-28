@@ -1,9 +1,9 @@
 # bsv-tracker
 
-**0.7.0**, a transaction evidence state machine; `main` is on **bsv-rs ^0.8**
-for the next release, and the tag `v0.7.0`, on bsv-rs ^0.7, is the release of
-record. crates.io carries the same version, 0.7.0; the repository's Releases
-page has a Release for each tag.
+**0.9.0-beta.11**, a transaction evidence state machine: a prerelease of the
+`beta` line, on **bsv-rs =0.9.0-beta.10**. The stable line is `main`, whose
+release 0.8.0 is on bsv-rs 0.8.0. crates.io carries both versions; the
+repository's Releases page has a Release for each tag.
 
 The tracker owns re-asking: per transaction it keeps a word, the evidence
 behind it, the hints received and the next re-ask. Checked headers and proofs
@@ -16,7 +16,7 @@ without giving this crate a network client or a periodic chain scan.
 
 ```toml
 [dependencies]
-bsv-tracker = "0.7.0"
+bsv-tracker = "=0.9.0-beta.11"
 ```
 
 The crate needs Rust 1.88 or newer (`rust-version` in `Cargo.toml`). Enable
@@ -108,39 +108,41 @@ impl Headers for Verified {
     }
 }
 
-// A coin of a transaction mined at 100, its proof checked against them.
-let txid = "aa".repeat(32);
-let leaves = vec![MerklePathLeaf::new_txid(0, txid.clone()), MerklePathLeaf::new(1, "bb".repeat(32))];
-let proof = Proof::new(&txid, MerklePath::new(100, vec![leaves])?)?;
-let headers = Verified(Header { hash: "cc".repeat(32), merkle_root: proof.root()? });
-let params = Params::new(3600, 3); // the age threshold in seconds, the spend depth
-let mut coin = State::new(&txid);
-coin.step(&params, &headers, Input::Evidence(Evidence::Proof(proof)))?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // A coin of a transaction mined at 100, its proof checked against them.
+    let txid = "aa".repeat(32);
+    let leaves = vec![MerklePathLeaf::new_txid(0, txid.clone()), MerklePathLeaf::new(1, "bb".repeat(32))];
+    let proof = Proof::new(&txid, MerklePath::new(100, vec![leaves])?)?;
+    let headers = Verified(Header { hash: "cc".repeat(32), merkle_root: proof.root()? });
+    let params = Params::new(3600, 3); // the age threshold in seconds, the spend depth
+    let mut coin = State::new(&txid);
+    coin.step(&params, &headers, Input::Evidence(Evidence::Proof(proof)))?;
 
-// The feed splits at 100: two branches past it, each with its witness tip at 101.
-let key = format!("split:{}", "dd".repeat(32));
-let tip = |hash: &str, rung: &str| {
-    format!(r#"{{"hash":"{}","height":101,"chainWork":"{}","rungs":["{rung}"]}}"#, hash.repeat(32), "0e".repeat(32))
-};
-let split = format!(
-    r#"{{"v":2,"kind":"split","key":"{key}","forkHeight":100,"tips":[{},{}]}}"#,
-    tip("e1", "a"),
-    tip("e2", "b")
-);
-let resolved = format!(r#"{{"v":2,"kind":"splitResolved","key":"{key}","forkHeight":100}}"#);
+    // The feed splits at 100: two branches past it, each with its witness tip at 101.
+    let key = format!("split:{}", "dd".repeat(32));
+    let tip = |hash: &str, rung: &str| {
+        format!(r#"{{"hash":"{}","height":101,"chainWork":"{}","rungs":["{rung}"]}}"#, hash.repeat(32), "0e".repeat(32))
+    };
+    let split = format!(
+        r#"{{"v":2,"kind":"split","key":"{key}","forkHeight":100,"tips":[{},{}]}}"#,
+        tip("e1", "a"),
+        tip("e2", "b")
+    );
+    let resolved = format!(r#"{{"v":2,"kind":"splitResolved","key":"{key}","forkHeight":100}}"#);
 
-let mut ds = Doubts::cold(105);
-ds = doubts::step(&Bounds::B400, &decode_envelope(split.as_bytes())?, &ds);
-// An open split at or below the coin's height: nothing there is deep.
-assert_eq!(doubts::eff_depth(&headers, &ds, 100)?, 0);
-assert!(!doubts::spendable_eff(&params, &headers, &ds, None, &coin)?);
+    let mut ds = Doubts::cold(105);
+    ds = doubts::step(&Bounds::B400, &decode_envelope(split.as_bytes())?, &ds);
+    // An open split at or below the coin's height: nothing there is deep.
+    assert_eq!(doubts::eff_depth(&headers, &ds, 100)?, 0);
+    assert!(!doubts::spendable_eff(&params, &headers, &ds, None, &coin)?);
 
-ds = doubts::step(&Bounds::B400, &decode_envelope(resolved.as_bytes())?, &ds);
-// Resolved: the rival branch's tip at 101 stays a doubt, four blocks behind.
-assert_eq!(ds.to_string(), "tip=105 splits=[] rivals=[100:101] summary=-");
-assert_eq!(doubts::eff_depth(&headers, &ds, 100)?, 4);
-assert!(doubts::spendable_eff(&params, &headers, &ds, None, &coin)?);
-# Ok::<(), Box<dyn std::error::Error>>(())
+    ds = doubts::step(&Bounds::B400, &decode_envelope(resolved.as_bytes())?, &ds);
+    // Resolved: the rival branch's tip at 101 stays a doubt, four blocks behind.
+    assert_eq!(ds.to_string(), "tip=105 splits=[] rivals=[100:101] summary=-");
+    assert_eq!(doubts::eff_depth(&headers, &ds, 100)?, 4);
+    assert!(doubts::spendable_eff(&params, &headers, &ds, None, &coin)?);
+    Ok(())
+}
 ```
 
 ## Events and records
