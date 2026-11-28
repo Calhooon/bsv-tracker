@@ -1,6 +1,6 @@
 use crate::{
     ChainEvent, CheckError, CheckedProof, CompactError, Headers, Height, Hint, HintStatus, Proof,
-    Timestamp, TxId,
+    Timestamp, TxId, AMBIGUOUS_TX_LEN,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -426,6 +426,10 @@ impl Params {
     }
 }
 /// The complete private state of one transaction.
+///
+/// Two states are equal when every field is, the measured length
+/// ([`State::tx_len`]) among them: a measured state and an unmeasured one are
+/// not equal.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct State {
     txid: TxId,
@@ -436,12 +440,45 @@ pub struct State {
     last_hint_at: Option<Timestamp>,
     reask: Option<Reask>,
     handed_to: Vec<HandedTo>,
+    tx_len: Option<u64>,
 }
 impl State {
     /// Birth with no chain claim or stored evidence, as in `Tracker.State.init`.
+    /// A state born from a txid is unmeasured: [`State::tx_len`] reads `None`
+    /// until the host hands the transaction's bytes ([`State::measure`]).
     pub fn new(txid: impl Into<TxId>) -> Self {
+        Self::born(txid.into().to_ascii_lowercase(), None)
+    }
+    /// Birth from the transaction's serialized bytes: the txid is their hash
+    /// (the double SHA-256, reversed, as 64 lowercase hex digits),
+    /// [`State::tx_len`] is their count, and the word is `Unknown` with no
+    /// stored evidence. The bytes are hashed and counted, never decoded, and
+    /// this never fails: any bytes hash to some txid, and the host compares
+    /// [`State::txid`] with the txid it expects.
+    ///
+    /// A transaction of exactly 64 bytes is never taken as proven by a merkle
+    /// path: a state measured at [`AMBIGUOUS_TX_LEN`] is tracked like any
+    /// other and takes no proof, so it never reads `mined`.
+    ///
+    /// Ahead of the Lean: bsv-stack-lean `lean/Tracker.lean` at `9a727a64`
+    /// has no measured birth yet (`State.init` with the field `txLen` set is
+    /// its mirror when it lands).
+    ///
+    /// ```
+    /// use bsv_tracker::{State, Word, AMBIGUOUS_TX_LEN};
+    /// let state = State::measured(&[0x5a; 64]);
+    /// assert_eq!(state.tx_len(), Some(AMBIGUOUS_TX_LEN));
+    /// assert_eq!(state.word(), &Word::Unknown);
+    /// ```
+    #[must_use]
+    pub fn measured(tx_bytes: &[u8]) -> Self {
+        let (txid, len) = crate::evidence::digest(tx_bytes);
+        Self::born(txid, Some(len))
+    }
+    /// A birth: the txid already in its lowercase form.
+    pub(crate) fn born(txid: TxId, tx_len: Option<u64>) -> Self {
         Self {
-            txid: txid.into().to_ascii_lowercase(),
+            txid,
             word: Word::Unknown,
             evidence: None,
             suspect: false,
@@ -449,6 +486,7 @@ impl State {
             last_hint_at: None,
             reask: None,
             handed_to: vec![],
+            tx_len,
         }
     }
     /// The host's tracked transaction.
@@ -497,11 +535,106 @@ impl State {
     pub fn handed_to(&self) -> &[HandedTo] {
         &self.handed_to
     }
+    /// The transaction's measured length in bytes, or `None` where the host
+    /// never handed the bytes. It is written only from bytes the crate hashed
+    /// to this state's txid ([`State::measured`], [`State::measure`],
+    /// [`Tracker::track_bytes`](crate::Tracker::track_bytes)), never from a
+    /// length a host states, and once written it does not change.
+    ///
+    /// A transaction of exactly 64 bytes is never taken as proven by a merkle
+    /// path: a state that reads `Some(AMBIGUOUS_TX_LEN)` takes no proof, and
+    /// its host asks none for it.
+    ///
+    /// Ahead of the Lean: the field's name there is `State.txLen`, which
+    /// bsv-stack-lean `lean/Tracker.lean` at `9a727a64` does not hold yet.
+    #[must_use]
+    pub fn tx_len(&self) -> Option<u64> {
+        self.tx_len
+    }
+    /// Hand the transaction's serialized bytes to a state born without them,
+    /// so that it holds its measured length ([`State::tx_len`]). The bytes
+    /// are hashed and counted, never decoded.
+    ///
+    /// - Bytes that hash to another txid: [`CheckError::TxidMismatch`], the
+    ///   state left whole (no re-ask is written: this is not a proof).
+    /// - A state already measured at the same length: `Ok`, nothing moves.
+    /// - A state already measured at another length:
+    ///   [`CheckError::LengthMismatch`], the state left whole.
+    /// - An unmeasured state: the length is written. Off 64 bytes nothing
+    ///   else moves, whatever the word.
+    ///
+    /// # The fault road
+    ///
+    /// A transaction of exactly 64 bytes is never taken as proven by a merkle
+    /// path. When the measure taken here is [`AMBIGUOUS_TX_LEN`] and the
+    /// state held a proof, the proof is unsaid AND the fault is returned: the
+    /// length is written, the stored record is dropped ([`State::evidence`]
+    /// reads `None`), a `Mined` or `Stale` word reads `Unknown` with the
+    /// suspect mark and the re-ask cleared, any other word keeps its word and
+    /// its re-ask, and the call answers
+    /// `Err(`[`CheckError::AmbiguousLength`]`)`. So this one fault, from this
+    /// call, means the state has moved; the other two leave it whole.
+    ///
+    /// This is a fault, never a transition a host may lean on. It is reached
+    /// only when the state took its proof unmeasured (a state born from a
+    /// txid, or a row restored from version 1 bytes) and the bytes handed
+    /// later are 64 long. The Lean's machine has no such step: there the
+    /// length a host gives for a transaction is a hypothesis (the host's
+    /// statement is true), and this is what the crate does when that
+    /// hypothesis is found broken.
+    ///
+    /// Ahead of the Lean: bsv-stack-lean `lean/Tracker.lean` at `9a727a64`
+    /// has no measure yet.
+    ///
+    /// # Errors
+    ///
+    /// [`CheckError::TxidMismatch`], [`CheckError::LengthMismatch`] and, on
+    /// the fault road above, [`CheckError::AmbiguousLength`].
+    pub fn measure(&mut self, tx_bytes: &[u8]) -> Result<(), CheckError> {
+        let (txid, len) = crate::evidence::digest(tx_bytes);
+        if txid != self.txid {
+            return Err(CheckError::TxidMismatch);
+        }
+        match self.tx_len {
+            Some(held) if held == len => return Ok(()),
+            Some(held) => {
+                return Err(CheckError::LengthMismatch {
+                    measured: held,
+                    offered: len,
+                })
+            }
+            None => self.tx_len = Some(len),
+        }
+        if len == AMBIGUOUS_TX_LEN && self.holds_a_proof() {
+            self.unsay();
+            return Err(CheckError::AmbiguousLength);
+        }
+        Ok(())
+    }
+
+    /// Whether a proof was taken for this transaction and still shows: a
+    /// stored record, or a word only a proof writes.
+    fn holds_a_proof(&self) -> bool {
+        self.evidence.is_some() || matches!(self.word, Word::Mined(_) | Word::Stale)
+    }
+
+    /// Unsay a proof taken for a transaction measured at 64 bytes: the record
+    /// is dropped; a `Mined` or `Stale` word reads `Unknown`, its mark and
+    /// its re-ask cleared; any other word keeps its word and its re-ask.
+    fn unsay(&mut self) {
+        self.evidence = None;
+        if matches!(self.word, Word::Mined(_) | Word::Stale) {
+            self.word = Word::Unknown;
+            self.suspect = false;
+            self.reask = None;
+        }
+    }
     /// The compact byte form (bsv-stack-lean #92), version 2: a version byte,
     /// the txid, the word, the evidence, the suspect mark, the hints, the last
-    /// hint time, the re-ask, the instances of [`State::handed_to`], and two
+    /// hint time, the re-ask, the instances of [`State::handed_to`], two
     /// fields this release holds empty (the record of a conflict's
-    /// competitors and the word held when it began). The layout is in the source of `src/compact.rs`; the
+    /// competitors and the word held when it began), and the measured length
+    /// ([`State::tx_len`]). The layout is in the source of `src/compact.rs`; the
     /// version byte changes when the layout does, so a later release tells an
     /// earlier layout from its own rather than misreading it.
     #[must_use]
@@ -515,6 +648,7 @@ impl State {
             last_hint_at: self.last_hint_at,
             reask: self.reask.as_ref(),
             handed_to: &self.handed_to,
+            tx_len: self.tx_len,
         })
     }
     /// Restore a state from [`State::to_compact`]'s bytes.
@@ -531,6 +665,13 @@ impl State {
     /// as it does any suspect word; a host holding the state alone feeds
     /// [`Evidence::Recheck`] before it serves the inclusion.
     ///
+    /// The measured length returns as it was written: a version 2 row
+    /// restores [`State::tx_len`], and a version 1 row restores unmeasured.
+    /// A `mined` row of version 1 was written before the crate measured a
+    /// transaction; it restores `mined` as before and nothing more is asked
+    /// of it, and a host that later hands its bytes meets
+    /// [`State::measure`]'s rules.
+    ///
     /// Every other field returns exactly: a state whose word is not `mined`,
     /// or that was already suspect with a re-ask pending, restores equal to
     /// the state that wrote the bytes, and a restored state writes bytes that
@@ -543,7 +684,8 @@ impl State {
     /// [`CompactError::Malformed`] for bytes the encoder never writes (a
     /// `mined` word with no stored proof among them), and
     /// [`CompactError::Evidence`] for a stored proof that does not hold
-    /// together.
+    /// together, or that stands beside a measured length of 64 bytes
+    /// ([`CheckError::AmbiguousLength`]).
     pub fn from_compact(bytes: &[u8]) -> Result<Self, CompactError> {
         let parts = crate::compact::decode(bytes)?;
         let evidence = parts.evidence.map(Arc::new);
@@ -567,6 +709,7 @@ impl State {
             last_hint_at: parts.last_hint_at,
             reask: parts.reask,
             handed_to: parts.handed_to,
+            tx_len: parts.tx_len,
         };
         if mined {
             state.suspect = true;
@@ -577,10 +720,18 @@ impl State {
     /// Execute one Lean transition. Proof and header failures retain the word
     /// and record the re-ask before returning an error to the host.
     ///
+    /// A transaction of exactly 64 bytes is never taken as proven by a merkle
+    /// path: a state measured at [`AMBIGUOUS_TX_LEN`] ([`State::tx_len`])
+    /// answers every [`Evidence::Proof`] for its txid with
+    /// [`CheckError::AmbiguousLength`] and is left whole, with no re-ask
+    /// written (a re-ask is an order to fetch, and no fetch helps).
+    ///
     /// # Errors
     ///
     /// The [`CheckError`] of a proof, competitor, chain event or recheck whose
     /// check fails; the word is kept and the re-ask recorded.
+    /// [`CheckError::AmbiguousLength`] for a proof offered to a state
+    /// measured at 64 bytes; nothing is recorded.
     pub fn step<H: Headers + ?Sized>(
         &mut self,
         params: &Params,
@@ -717,6 +868,11 @@ impl State {
         if proof.txid() != self.txid {
             self.reask = Some(Reask::ProofFailed { height });
             return Err(CheckError::TxidMismatch);
+        }
+        // A transaction of exactly 64 bytes is never taken as proven by a
+        // merkle path: the state is left whole.
+        if self.tx_len == Some(AMBIGUOUS_TX_LEN) {
+            return Err(CheckError::AmbiguousLength);
         }
         match crate::evidence::check_snapshot(headers, proof) {
             Ok(checked) => {
@@ -910,5 +1066,30 @@ fn agrees(word: &Word, status: &HintStatus) -> bool {
         | (Word::Conflicted { .. }, HintStatus::DoubleSpend { .. }) => true,
         (Word::Mined(mined), HintStatus::Mined { height }) => mined.height() == *height,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::State;
+    use crate::CheckError;
+
+    /// The arm no public road reaches without two byte strings of one hash:
+    /// a state measured at one length handed bytes of its txid at another.
+    #[test]
+    fn a_second_measure_of_another_length_is_refused_and_the_state_left_whole() {
+        let tx_bytes = [0x5a_u8; 191];
+        let (txid, len) = crate::evidence::digest(&tx_bytes);
+        assert_eq!(len, 191);
+        let mut state = State::born(txid, Some(190));
+        let before = state.clone();
+        assert_eq!(
+            state.measure(&tx_bytes),
+            Err(CheckError::LengthMismatch {
+                measured: 190,
+                offered: 191,
+            })
+        );
+        assert_eq!(state, before);
     }
 }

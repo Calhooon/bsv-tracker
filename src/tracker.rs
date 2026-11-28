@@ -65,6 +65,49 @@ impl Tracker {
             .entry(txid.clone())
             .or_insert_with(|| State::new(txid))
     }
+    /// Begin tracking one transaction from its serialized bytes, or hand the
+    /// bytes of one already tracked. The txid is the hash of the bytes, which
+    /// the crate computes and does not decode: the host compares the returned
+    /// state's [`State::txid`] with the txid it expects.
+    ///
+    /// A txid not tracked is born measured ([`State::measured`]): its word is
+    /// `Unknown` and no index moves. A tracked txid gains its measure as by
+    /// [`State::measure`], through the indexes, so they follow a word that
+    /// moves; repeating this with the same bytes does not erase its state.
+    /// A state whose [`State::tx_len`] is
+    /// [`AMBIGUOUS_TX_LEN`](crate::AMBIGUOUS_TX_LEN) takes no proof: a
+    /// transaction of exactly 64 bytes is never taken as proven by a merkle
+    /// path.
+    ///
+    /// Ahead of the Lean, as [`State::measure`] is.
+    ///
+    /// ```
+    /// use bsv_tracker::{Params, Tracker, AMBIGUOUS_TX_LEN};
+    /// let mut tracker = Tracker::new(Params::new(60, 1));
+    /// let raw_tx = [0x5a_u8; 191];
+    /// let state = tracker.track_bytes(&raw_tx).unwrap();
+    /// assert_eq!(state.tx_len(), Some(191));
+    /// assert_ne!(state.tx_len(), Some(AMBIGUOUS_TX_LEN));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The faults of [`State::measure`] for a tracked txid:
+    /// [`CheckError::LengthMismatch`] with the state left whole, and
+    /// [`CheckError::AmbiguousLength`] when the measure was taken, is 64
+    /// bytes, and unsaid a proof the state held (the fault road of
+    /// [`State::measure`]: the state has moved, and [`Tracker::get`] reads
+    /// it). A txid not tracked never fails.
+    pub fn track_bytes(&mut self, tx_bytes: &[u8]) -> Result<&State, CheckError> {
+        let (txid, len) = crate::evidence::digest(tx_bytes);
+        if self.states.contains_key(&txid) {
+            self.apply_transition(&txid, |_, state| state.measure(tx_bytes))?;
+        } else {
+            self.states
+                .insert(txid.clone(), State::born(txid.clone(), Some(len)));
+        }
+        Ok(&self.states[&txid])
+    }
     /// Hold a state restored by [`State::from_compact`] and index it as a
     /// transition would; a restored `mined` word joins the suspect set, so the
     /// next tip rechecks it. The state it replaces, if the txid was tracked.

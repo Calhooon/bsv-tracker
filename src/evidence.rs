@@ -1,5 +1,6 @@
 use std::fmt;
 
+use bsv_rs::primitives::hash::sha256d;
 use bsv_rs::transaction::MerklePath;
 
 use crate::{Hash, Height, TxId};
@@ -24,8 +25,58 @@ impl fmt::Display for HeaderError {
 }
 impl std::error::Error for HeaderError {}
 
+/// The one length, in bytes, at which a merkle path proves nothing: a
+/// transaction of exactly 64 bytes is never taken as proven by a merkle path
+/// (BRC-237's condition for an anchor; bsv-rs enforces it in its own
+/// verifier, its public advisory GHSA-jjhc-7hvh-c3hm).
+///
+/// A host and a test read this constant, never the literal: a state whose
+/// [`State::tx_len`](crate::State::tx_len) is `Some(AMBIGUOUS_TX_LEN)` takes
+/// no proof, so its host asks none for it.
+///
+/// Ahead of the Lean: bsv-stack-lean `lean/Tracker.lean` at `9a727a64` holds
+/// no such constant yet; the rule's words are its
+/// `docs/DECISIONS-2026-10-19.md` 32.13.
+pub const AMBIGUOUS_TX_LEN: u64 = 64;
+
+/// The txid of serialized transaction bytes and their count: the double
+/// SHA-256 of the bytes, reversed, as 64 lowercase hex digits (display
+/// order), and the length in bytes as a `u64` (never a `usize`: the stored
+/// form must not depend on the host's word size). The bytes are hashed and
+/// counted, never decoded.
+pub(crate) fn digest(tx_bytes: &[u8]) -> (TxId, u64) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let hash = sha256d(tx_bytes);
+    let mut txid = String::with_capacity(64);
+    for b in hash.iter().rev() {
+        txid.push(char::from(HEX[usize::from(b >> 4)]));
+        txid.push(char::from(HEX[usize::from(b & 0xf)]));
+    }
+    (txid, tx_bytes.len() as u64)
+}
+
 /// A failed evidence check. An error is never a transaction word.
+///
+/// `#[non_exhaustive]`: a later release may add a fault, so a host's match
+/// outside this crate names the faults it reads and carries a wildcard arm.
+/// A fault a host does not name still means "not `mined`", so the wildcard
+/// arm is safe here, where [`Word`](crate::Word) stays exhaustive on purpose.
+/// A match over the five faults of 0.9.0-beta.11 no longer compiles.
+///
+/// ```compile_fail,E0004
+/// use bsv_tracker::CheckError;
+/// fn kind(fault: &CheckError) -> &'static str {
+///     match fault {
+///         CheckError::InvalidProof(_) => "invalid",
+///         CheckError::Headers(_) => "headers",
+///         CheckError::Unavailable(_) => "unavailable",
+///         CheckError::RootMismatch(_) => "root",
+///         CheckError::TxidMismatch => "txid",
+///     }
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CheckError {
     /// An invalid txid or BRC-74 path.
     InvalidProof(String),
@@ -35,8 +86,29 @@ pub enum CheckError {
     Unavailable(Height),
     /// The computed root differs from the active header's root.
     RootMismatch(Height),
-    /// A proof belongs to a different transaction.
+    /// A proof belongs to a different transaction; or, from
+    /// [`State::measure`](crate::State::measure) and
+    /// [`Tracker::track_bytes`](crate::Tracker::track_bytes), the bytes are
+    /// another transaction's.
     TxidMismatch,
+    /// The transaction is exactly [`AMBIGUOUS_TX_LEN`] bytes: a transaction of
+    /// exactly 64 bytes is never taken as proven by a merkle path. Answered by
+    /// the proof door of a state measured at that length, which takes no
+    /// proof and is left whole; inside
+    /// [`CompactError::Evidence`](crate::CompactError::Evidence) for stored
+    /// bytes that hold that length beside a proof; and by
+    /// [`State::measure`](crate::State::measure) when the measure it has just
+    /// taken is of that length and the state held a proof, which the call
+    /// has then unsaid.
+    AmbiguousLength,
+    /// Two lengths for one transaction: the state's own measure, and the
+    /// length a second measure brought. The state is left whole.
+    LengthMismatch {
+        /// The length the state holds, measured from bytes.
+        measured: u64,
+        /// The length that was offered against it.
+        offered: u64,
+    },
 }
 impl fmt::Display for CheckError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
