@@ -385,6 +385,86 @@ fn conflicted_from_handed_keeps_its_instances_through_the_bytes() {
     assert_eq!(State::from_compact(&s.to_compact()).unwrap(), s);
 }
 
+/// The measured length, version 2's last field: `0`, or `1` and a varint. A
+/// transaction of exactly 64 bytes is never taken as proven by a merkle path,
+/// so that length beside a stored proof is refused.
+#[test]
+fn tx_length_field() {
+    let txid = hash(1);
+    let fresh = State::new(&txid).to_compact();
+    let with = |row: &[u8], field: &[u8]| {
+        let mut bytes = row[..row.len() - 1].to_vec();
+        bytes.extend_from_slice(field);
+        bytes
+    };
+    let read = |bytes: &[u8]| State::from_compact(bytes).map(|s| s.tx_len());
+
+    // `00`: the host never handed the bytes.
+    assert_eq!(fresh.last(), Some(&0));
+    assert_eq!(read(&fresh), Ok(None));
+    // `01` and a varint: a measure, written back as it was read.
+    for (field, len) in [
+        (&[1, 0x3f][..], 63),
+        (&[1, 0x41][..], 65),
+        (&[1, 0xbf, 0x01][..], 191),
+        // A length of zero is a measure, never absence.
+        (&[1, 0x00][..], 0),
+        // 64 with no stored proof: a state measured at 64.
+        (&[1, 0x40][..], AMBIGUOUS_TX_LEN),
+    ] {
+        let bytes = with(&fresh, field);
+        assert_eq!(read(&bytes), Ok(Some(len)));
+        let restored = State::from_compact(&bytes).unwrap();
+        assert_eq!(restored.to_compact(), bytes);
+        assert_ne!(restored, State::new(&txid));
+    }
+
+    // Beside a stored proof: 63 is read, 64 is refused.
+    let mut h = TestHeaders::default();
+    let p = proof(&txid, 10, 2);
+    h.insert(&p, 10);
+    let mut s = State::new(&txid);
+    step(&mut s, &h, Input::Evidence(Evidence::Proof(p)));
+    let mined_row = s.to_compact();
+    assert_eq!(read(&mined_row), Ok(None));
+    assert_eq!(read(&with(&mined_row, &[1, 0x3f])), Ok(Some(63)));
+    assert_eq!(
+        read(&with(&mined_row, &[1, 0x40])),
+        Err(CompactError::Evidence(CheckError::AmbiguousLength))
+    );
+    // The same for a stale word, which keeps its record.
+    let mut moved = h.clone();
+    moved.move_root(10, 77);
+    step(&mut s, &moved, Input::Evidence(Evidence::Recheck));
+    assert_eq!(s.word(), &Word::Stale);
+    assert_eq!(
+        read(&with(&s.to_compact(), &[1, 0x40])),
+        Err(CompactError::Evidence(CheckError::AmbiguousLength))
+    );
+
+    // The refusals of the field's own bytes.
+    assert_eq!(
+        read(&with(&fresh, &[2])),
+        Err(CompactError::Malformed("flag"))
+    );
+    assert_eq!(
+        read(&with(&fresh, &[1, 0x80, 0x00])),
+        Err(CompactError::Malformed("varint not shortest"))
+    );
+    // Version 2 bytes without the field, or with its flag alone.
+    assert_eq!(read(&with(&fresh, &[])), Err(CompactError::Truncated));
+    assert_eq!(read(&with(&fresh, &[1])), Err(CompactError::Truncated));
+    assert_eq!(
+        read(&with(&fresh, &[1, 0x3f, 0])),
+        Err(CompactError::TrailingBytes)
+    );
+
+    // A version 1 row has no such field and reads unmeasured.
+    let mut v1 = fresh[..fresh.len() - 4].to_vec();
+    v1[0] = 1;
+    assert_eq!(read(&v1), Ok(None));
+}
+
 fn hex_bytes(s: &str) -> Vec<u8> {
     (0..s.len())
         .step_by(2)

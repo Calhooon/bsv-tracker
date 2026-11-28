@@ -15,11 +15,18 @@
 //! | instances | a varint count, then each instance (a string) and the time of its hand-over (a varint), in [`State::handed_to`]'s order |
 //! | competitors | a varint count, `0`: the record of a conflict, which this release holds empty |
 //! | prior word | `0`: the word held when a conflict began, which this release holds empty |
+//! | tx length | `0`: the host never handed the transaction's bytes. Or `1` and a varint: the transaction's measured length in bytes ([`State::tx_len`]) |
 //!
-//! Version 1 is version 2 without its last three fields, with no word tag `9`
+//! Version 1 is version 2 without its last four fields, with no word tag `9`
 //! and no re-ask tag `7`. The reader reads both: a version 1 row restores as
-//! the state it restored to before, with no instance, no competitor and no
-//! prior word.
+//! the state it restored to before, with no instance, no competitor, no
+//! prior word and no measured length.
+//!
+//! The length is a measure, never absence: a length of zero is `01 00`. A
+//! transaction of exactly 64 bytes is never taken as proven by a merkle path,
+//! so a length of 64 beside a stored proof is refused
+//! ([`CompactError::Evidence`] holding [`CheckError::AmbiguousLength`]); a
+//! length of 64 with no stored proof is read, as a state measured at 64.
 //!
 //! A varint is unsigned LEB128 in its shortest form. A string is a varint
 //! length and its UTF-8 bytes. An id is `0` and 32 raw bytes when the text is
@@ -43,10 +50,11 @@
 //!
 //! [`State::to_compact`]: crate::State::to_compact
 //! [`State::handed_to`]: crate::State::handed_to
+//! [`State::tx_len`]: crate::State::tx_len
 
 use crate::{
     CheckError, CheckedProof, HandedTo, Header, Height, Hint, HintStatus, Proof, Reask, Timestamp,
-    TxId, Verdict, Word,
+    TxId, Verdict, Word, AMBIGUOUS_TX_LEN,
 };
 use bsv_rs::transaction::{MerklePath, MerklePathLeaf};
 use std::fmt;
@@ -68,8 +76,10 @@ pub enum CompactError {
     /// A tag, flag, varint, id or string the encoder never writes.
     Malformed(&'static str),
     /// The stored proof record does not hold together: its path does not
-    /// reduce, it names another transaction, or its root differs from its
-    /// header's. Nothing here consults the host's headers.
+    /// reduce, it names another transaction, its root differs from its
+    /// header's, or it stands beside a measured length of 64 bytes
+    /// ([`CheckError::AmbiguousLength`]). Nothing here consults the host's
+    /// headers.
     Evidence(CheckError),
 }
 impl fmt::Display for CompactError {
@@ -90,6 +100,8 @@ pub(crate) struct Parts {
     pub last_hint_at: Option<Timestamp>,
     pub reask: Option<Reask>,
     pub handed_to: Vec<HandedTo>,
+    /// None for a version 1 row and for a state the host never measured.
+    pub tx_len: Option<u64>,
 }
 
 pub(crate) struct Fields<'a> {
@@ -101,6 +113,7 @@ pub(crate) struct Fields<'a> {
     pub last_hint_at: Option<Timestamp>,
     pub reask: Option<&'a Reask>,
     pub handed_to: &'a [HandedTo],
+    pub tx_len: Option<u64>,
 }
 
 pub(crate) fn encode(fields: &Fields<'_>) -> Vec<u8> {
@@ -140,6 +153,8 @@ pub(crate) fn encode(fields: &Fields<'_>) -> Vec<u8> {
     // The record of competitors and the prior word: empty in this release.
     w.len(0);
     w.byte(0);
+    // The measured length, the last field.
+    w.option(fields.tx_len, Writer::varint);
     w.0
 }
 
@@ -181,6 +196,7 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Parts, CompactError> {
     let last_hint_at = r.option(Reader::varint)?;
     let reask = r.option(Reader::reask)?;
     let mut handed_to: Vec<HandedTo> = vec![];
+    let mut tx_len = None;
     if version >= 2 {
         let count = r.count()?;
         for _ in 0..count {
@@ -197,9 +213,15 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Parts, CompactError> {
         if r.byte()? != 0 {
             return Err(CompactError::Malformed("prior word"));
         }
+        tx_len = r.option(Reader::varint)?;
     }
     if !r.bytes.is_empty() {
         return Err(CompactError::TrailingBytes);
+    }
+    // A transaction of exactly 64 bytes is never taken as proven by a merkle
+    // path: the encoder never writes that length beside a stored proof.
+    if tx_len == Some(AMBIGUOUS_TX_LEN) && evidence.is_some() {
+        return Err(CompactError::Evidence(CheckError::AmbiguousLength));
     }
     match (&word, handed_to.is_empty()) {
         (Some(Word::Handed), true) => {
@@ -221,6 +243,7 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Parts, CompactError> {
         last_hint_at,
         reask,
         handed_to,
+        tx_len,
     })
 }
 
