@@ -172,11 +172,11 @@ fn every_proper_prefix_is_truncated_and_a_suffix_is_trailing() {
     let mut long = bytes.clone();
     long.push(0);
     assert_eq!(State::from_compact(&long), Err(CompactError::TrailingBytes));
-    let mut v2 = bytes;
-    v2[0] = 2;
+    let mut v3 = bytes;
+    v3[0] = 3;
     assert_eq!(
-        State::from_compact(&v2),
-        Err(CompactError::UnknownVersion(2))
+        State::from_compact(&v3),
+        Err(CompactError::UnknownVersion(3))
     );
 }
 
@@ -227,14 +227,16 @@ fn bytes_that_forge_a_mined_word_are_refused() {
 
     // An unknown tag and a non-canonical varint.
     let mut tag = State::new(&txid).to_compact();
-    tag[34] = 9;
+    tag[34] = 10;
     assert_eq!(
         State::from_compact(&tag),
         Err(CompactError::Malformed("word tag"))
     );
     let mut fresh = State::new(&txid).to_compact();
-    let hints_at = fresh.len() - 3;
-    assert_eq!(&fresh[hints_at..], &[0, 0, 0]);
+    // Version 2: the hints, the last hint time and the re-ask, then the
+    // instances, the competitors and the prior word.
+    let hints_at = fresh.len() - 6;
+    assert_eq!(&fresh[hints_at..], &[0, 0, 0, 0, 0, 0]);
     fresh.splice(hints_at..hints_at + 1, [0x80, 0x00]);
     assert_eq!(
         State::from_compact(&fresh),
@@ -286,6 +288,101 @@ fn a_restored_mined_word_is_rechecked_before_it_counts() {
         s.evidence(),
         State::from_compact(&bytes).unwrap().evidence()
     );
+}
+
+/// Version 2's refusals (for #56): each byte string the encoder never writes.
+#[test]
+fn version_2_refusals() {
+    let h = TestHeaders::default();
+    let txid = hash(1);
+    let mut s = State::new(&txid);
+    let hand = |instance: &str, at| {
+        Input::Host(HostAction::HandOver {
+            instance: instance.into(),
+            at,
+        })
+    };
+    step(&mut s, &h, hand("a", 5));
+    step(&mut s, &h, hand("b", 6));
+    step(&mut s, &h, Input::Host(HostAction::Tick(65)));
+    assert_eq!(s.reask(), Some(&Reask::Reannounce));
+    let bytes = s.to_compact();
+    assert_eq!(State::from_compact(&bytes).unwrap(), s);
+    // version, txid (34 bytes), word tag 9 handed, evidence 0, suspect 0,
+    // hints 0, last hint 0, re-ask 1 and tag 7, two instances ("a" at 5,
+    // "b" at 6), no competitor, no prior word.
+    assert_eq!(bytes[34], 9);
+    let tail = [0, 0, 0, 0, 1, 7, 2, 1, b'a', 5, 1, b'b', 6, 0, 0];
+    assert_eq!(&bytes[35..], &tail);
+    let malformed = |b: &[u8], why| {
+        assert_eq!(State::from_compact(b), Err(CompactError::Malformed(why)));
+    };
+
+    // Under version 1, word tag 9 and re-ask tag 7 do not exist.
+    let mut v1 = bytes[..35].to_vec();
+    v1[0] = 1;
+    v1.extend_from_slice(&[0, 0, 0, 0, 0]);
+    malformed(&v1, "word tag");
+    let mut v1 = State::new(&txid).to_compact();
+    v1.truncate(v1.len() - 4);
+    v1[0] = 1;
+    v1.extend_from_slice(&[1, 7]);
+    malformed(&v1, "re-ask tag");
+    // Re-ask tag 8 is not read by this release.
+    let mut eight = bytes.clone();
+    eight[40] = 8;
+    malformed(&eight, "re-ask tag");
+
+    // A handed word with no instance.
+    let mut none = bytes[..41].to_vec();
+    none.extend_from_slice(&[0, 0, 0]);
+    malformed(&none, "handed word with no instance");
+    // An instance named twice.
+    let mut twice = bytes.clone();
+    twice[46] = b'a';
+    malformed(&twice, "instance named twice");
+    // Instances beside a word that holds none.
+    for tag in [0, 1, 2, 3, 5, 8] {
+        let mut beside = bytes.clone();
+        beside[34] = tag;
+        malformed(&beside, "instances beside a word that holds none");
+    }
+    // The record of competitors and the prior word are empty in this release.
+    let mut rivals = bytes.clone();
+    rivals[48] = 1;
+    malformed(&rivals, "competitors");
+    let mut prior = bytes.clone();
+    prior[49] = 1;
+    malformed(&prior, "prior word");
+    // A version 1 row with the three fields is trailing.
+    let mut long = State::new(&txid).to_compact();
+    long[0] = 1;
+    assert_eq!(State::from_compact(&long), Err(CompactError::TrailingBytes));
+}
+
+/// A conflict that began from `handed` keeps its instances, and the bytes
+/// hold them (`Tracker.verdictHanded`).
+#[test]
+fn conflicted_from_handed_keeps_its_instances_through_the_bytes() {
+    let h = TestHeaders::default();
+    let mut s = State::new(hash(1));
+    step(
+        &mut s,
+        &h,
+        Input::Host(HostAction::HandOver {
+            instance: "a".into(),
+            at: 5,
+        }),
+    );
+    step(
+        &mut s,
+        &h,
+        Input::Evidence(Evidence::Verdict(NodeVerdict::Conflicted {
+            competitors: vec![hash(9)],
+        })),
+    );
+    assert_eq!(s.handed_to(), &[HandedTo::new("a", 5)]);
+    assert_eq!(State::from_compact(&s.to_compact()).unwrap(), s);
 }
 
 fn hex_bytes(s: &str) -> Vec<u8> {

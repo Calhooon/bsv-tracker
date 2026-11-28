@@ -497,9 +497,11 @@ impl State {
     pub fn handed_to(&self) -> &[HandedTo] {
         &self.handed_to
     }
-    /// The compact byte form (bsv-stack-lean #92): a version byte, the txid,
-    /// the word, the evidence, the suspect mark, the hints, the last hint time
-    /// and the re-ask. The layout is in the source of `src/compact.rs`; the
+    /// The compact byte form (bsv-stack-lean #92), version 2: a version byte,
+    /// the txid, the word, the evidence, the suspect mark, the hints, the last
+    /// hint time, the re-ask, the instances of [`State::handed_to`], and two
+    /// fields this release holds empty (the record of a conflict's
+    /// competitors and the word held when it began). The layout is in the source of `src/compact.rs`; the
     /// version byte changes when the layout does, so a later release tells an
     /// earlier layout from its own rather than misreading it.
     #[must_use]
@@ -512,6 +514,7 @@ impl State {
             hints: &self.hints,
             last_hint_at: self.last_hint_at,
             reask: self.reask.as_ref(),
+            handed_to: &self.handed_to,
         })
     }
     /// Restore a state from [`State::to_compact`]'s bytes.
@@ -536,7 +539,7 @@ impl State {
     /// # Errors
     ///
     /// [`CompactError::UnknownVersion`] for a version this crate does not
-    /// read, [`CompactError::Truncated`], [`CompactError::TrailingBytes`] and
+    /// read (it reads 1 and 2; a version 1 row restores with no instance), [`CompactError::Truncated`], [`CompactError::TrailingBytes`] and
     /// [`CompactError::Malformed`] for bytes the encoder never writes (a
     /// `mined` word with no stored proof among them), and
     /// [`CompactError::Evidence`] for a stored proof that does not hold
@@ -563,7 +566,7 @@ impl State {
             hints: parts.hints,
             last_hint_at: parts.last_hint_at,
             reask: parts.reask,
-            handed_to: vec![],
+            handed_to: parts.handed_to,
         };
         if mined {
             state.suspect = true;
